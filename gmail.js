@@ -31,6 +31,12 @@ async function authenticate(credentialsPath, tokenPath) {
   throw new Error(`No token found at ${tokenPath}. Run: node auth.js`);
 }
 
+async function getEmailAddress(auth) {
+  const gmail = google.gmail({ version: 'v1', auth });
+  const res = await gmail.users.getProfile({ userId: 'me' });
+  return res.data.emailAddress;
+}
+
 async function fetchUnreadIds(auth) {
   const gmail = google.gmail({ version: 'v1', auth });
   const res = await gmail.users.messages.list({
@@ -134,4 +140,4 @@ async function markAsRead(auth, messageId) {
   });
 }
 
-module.exports = { authenticate, fetchUnreadIds, getMessage, markAsRead };
+module.exports = { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead };

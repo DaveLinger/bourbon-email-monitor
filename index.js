@@ -3,10 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const { loadConfig } = require('./config');
 const { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent } = require('./db');
-const { authenticate, fetchUnreadIds, getMessage, markAsRead } = require('./gmail');
+const { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead } = require('./gmail');
 const { renderEmailToScreenshot } = require('./screenshot');
 const { analyzeEmail } = require('./classify');
-const { postToDiscord } = require('./notify');
+const { postToDiscord, postAlert } = require('./notify');
 
 const config = loadConfig();
 const db = getDb(config.db_path);
@@ -50,11 +50,18 @@ async function processEmail(auth, messageId) {
   if (analysis.category === 1) {
     // Discard — just log it
     console.log(`[${messageId}] Category 1 (ad), discarding`);
+  } else if (analysis.category === 5) {
+    // Action required — ping the alerts channel
+    console.log(`[${messageId}] Category 5 (action required), posting to alerts`);
+    await postAlert(
+      config.discord_alerts_webhook_url,
+      `📬 **Action required:** ${emailData.subject}\nFrom: ${emailData.from}`
+    ).catch(err => console.error(`[${messageId}] Alert post failed: ${err.message}`));
   } else if (analysis.category === 3) {
     // Immediate release — always post, no dedup
     console.log(`[${messageId}] Category 3 (immediate release), posting to Discord`);
     try {
-      discordMessageId = await postToDiscord(config.discord_webhook_url, emailData, analysis, screenshotPath, false);
+      discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, false);
       discordPosted = true;
       console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
       if (analysis.event_key) {
@@ -62,6 +69,7 @@ async function processEmail(auth, messageId) {
       }
     } catch (err) {
       console.error(`[${messageId}] Discord post failed: ${err.message}`);
+      await postAlert(config.discord_alerts_webhook_url, `Failed to post release alert for "${emailData.subject}": ${err.message}`);
     }
   } else if (analysis.category === 2 || analysis.category === 4) {
     const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key) : null;
@@ -95,12 +103,13 @@ async function processEmail(auth, messageId) {
         analysis = updateAnalysis;
         console.log(`[${messageId}] Meaningful update found: ${updateAnalysis.update_summary}`);
         try {
-          discordMessageId = await postToDiscord(config.discord_webhook_url, emailData, analysis, screenshotPath, true);
+          discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, true);
           discordPosted = true;
           console.log(`[${messageId}] Update posted to Discord (message ${discordMessageId})`);
           upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
         } catch (err) {
           console.error(`[${messageId}] Discord post failed: ${err.message}`);
+          await postAlert(config.discord_alerts_webhook_url, `Failed to post update alert for "${emailData.subject}": ${err.message}`);
         }
       } else {
         console.log(`[${messageId}] Duplicate with no new info, skipping Discord`);
@@ -156,12 +165,15 @@ async function poll(auth) {
     }
   } catch (err) {
     console.error('Poll error:', err.message);
+    await postAlert(config.discord_alerts_webhook_url, `Poll error: ${err.message}`).catch(() => {});
   }
 }
 
 async function run() {
   console.log('Email monitor starting...');
   const auth = await authenticate(config.gmail_credentials_path, config.gmail_token_path);
+  const emailAddress = await getEmailAddress(auth);
+  console.log(`Monitoring inbox: ${emailAddress}`);
 
   const intervalMs = config.poll_interval_minutes * 60 * 1000;
   console.log(`Polling every ${config.poll_interval_minutes} minutes`);

@@ -11,7 +11,7 @@ function loadConfig() {
     throw new Error(`config.json not found at ${configPath}`);
   }
   _config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  const required = ['gmail_credentials_path', 'gmail_token_path', 'discord_webhook_url', 'anthropic_api_key'];
+  const required = ['gmail_credentials_path', 'gmail_token_path', 'discord_alerts_webhook_url', 'discord_releases_webhook_url', 'anthropic_api_key'];
   for (const key of required) {
     if (!_config[key]) throw new Error(`config.json missing required field: ${key}`);
   }

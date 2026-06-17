@@ -12,7 +12,7 @@ async function renderEmailToScreenshot(html, outputPath) {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.setViewportSize({ width: 600, height: 800 });
+    await page.setViewportSize({ width: 1000, height: 900 });
 
     // Block external resources that would delay rendering or fail silently
     await page.route('**/*', (route) => {
