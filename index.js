@@ -57,6 +57,16 @@ async function processEmail(auth, messageId) {
       config.discord_alerts_webhook_url,
       `📬 **Action required:** ${emailData.subject}\nFrom: ${emailData.from}`
     ).catch(err => console.error(`[${messageId}] Alert post failed: ${err.message}`));
+  } else if (analysis.category === 6) {
+    // Uncategorized — post screenshot to alerts for human triage
+    console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
+    try {
+      const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
+      await postToDiscord(config.discord_alerts_webhook_url, emailData, triageAnalysis, screenshotPath, false);
+      discordPosted = true;
+    } catch (err) {
+      console.error(`[${messageId}] Triage alert post failed: ${err.message}`);
+    }
   } else if (analysis.category === 3) {
     // Immediate release — always post, no dedup
     console.log(`[${messageId}] Category 3 (immediate release), posting to Discord`);

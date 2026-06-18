@@ -10,6 +10,7 @@ Your job is to classify each email into one of these categories:
 3 - Immediate product release or availability: "Available NOW", same-day or next-day releases, products hitting shelves today. These are the most time-sensitive and always worth alerting.
 4 - Retailer sale or temporary discount on existing products (e.g. "20% off Blanton's this weekend"). Worth alerting but less urgent than category 3.
 5 - Action required from the recipient: confirm your subscription, verify your email address, complete your registration, etc. These need a human to click something.
+6 - Does not fit any of the above: partnership announcements, industry news, non-bourbon newsletters, ambiguous or unusual emails that don't clearly belong elsewhere. Flagged for human triage.
 
 Key insight: bourbon and whiskey images are crucial — product names, release dates, and limited availability info are often in the images rather than the text. Analyze both.
 
@@ -26,7 +27,7 @@ Return null for event_key on category 1 emails.`;
 const ANALYSIS_SCHEMA = {
   type: 'object',
   properties: {
-    category: { type: 'integer', description: '1=existing ad, 2=new announcement, 3=immediate release, 4=retailer sale, 5=action required (confirm subscription, verify email, etc.)' },
+    category: { type: 'integer', description: '1=existing ad, 2=new announcement, 3=immediate release, 4=retailer sale, 5=action required (confirm subscription, verify email, etc.), 6=does not fit any category (human triage needed)' },
     reasoning: { type: 'string', description: 'One sentence explaining the classification' },
     event_key: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Normalized canonical event name for dedup; null for category 1' },
     summary: { type: 'string', description: '2-3 sentence human-readable summary of what this email is about' },
