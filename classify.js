@@ -4,10 +4,12 @@ const fs = require('fs');
 
 const SYSTEM_PROMPT = `You are an expert analyst for a bourbon and American whiskey enthusiast. You monitor emails from distilleries, non-distiller producers (NDPs), distributors, and retailers.
 
+Wild Turkey allocated/limited products (for is_wild_turkey_allocated_imminent): Master's Keep series, Russell's Reserve 13/15, Austin Nichols Archive ("Gold Foil"), and any other limited-edition Wild Turkey or Russell's Reserve expressions. NOT allocated: Wild Turkey 101, 81, Longbranch, standard Rare Breed, American Honey, standard Russell's Reserve 10yr/6yr Rye.
+
 Your job is to classify each email into one of these categories:
 1 - Advertisement for existing, already-released products (promotional emails, "buy now", general brand awareness, existing product spotlights). These are common and NOT worth alerting.
 2 - Announcement of something NEW: new product releases coming in the future, upcoming events, lottery signups opening, allocations being announced, new expressions being revealed. These ARE worth alerting, but we track them to avoid duplicate alerts.
-3 - Immediate product release or availability: "Available NOW", same-day or next-day releases, products hitting shelves today. These are the most time-sensitive and always worth alerting.
+3 - Immediate product release or availability: "Available NOW", same-day or next-day releases, products available to order now or within 24 hours. These are the most time-sensitive and always worth alerting.
 4 - Retailer sale or temporary discount on existing products (e.g. "20% off Blanton's this weekend"). Worth alerting but less urgent than category 3.
 5 - Action required from the recipient: confirm your subscription, verify your email address, complete your registration, etc. These need a human to click something.
 6 - Does not fit any of the above: partnership announcements, industry news, non-bourbon newsletters, ambiguous or unusual emails that don't clearly belong elsewhere. Flagged for human triage.
@@ -39,9 +41,10 @@ const ANALYSIS_SCHEMA = {
     desirability_score: { type: 'integer', description: '1=low interest to 5=extremely rare and exciting (BTAC/Pappy level)' },
     discord_title: { type: 'string', description: 'Short compelling title for the Discord alert with appropriate emoji. Be specific and exciting.' },
     is_meaningful_update: { type: 'boolean', description: 'True if this email has new info worth alerting. Always true for category 3. For cat 2/4 with previous_post_details, only true if material new information is present.' },
-    update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' }
+    update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' },
+    is_wild_turkey_allocated_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (immediate/right-now release), AND (2) the product is Wild Turkey or Russell\'s Reserve, AND (3) it is an allocated or limited-edition product (Master\'s Keep, Russell\'s Reserve Single Barrel private selections, Diamond Anniversary, etc.). false for standard lineup products or non-category-3 emails.' }
   },
-  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary'],
+  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_wild_turkey_allocated_imminent'],
   additionalProperties: false
 };
 

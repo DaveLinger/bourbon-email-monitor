@@ -5,7 +5,13 @@ const STAR_RATINGS = ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐�
 
 function buildMessageText(emailData, analysis, isUpdate) {
   const titlePrefix = isUpdate ? '📢 **UPDATE:** ' : '';
-  const lines = [`${titlePrefix}**${analysis.discord_title}**`];
+  const lines = [];
+
+  if (analysis.is_wild_turkey_allocated_imminent) {
+    lines.push('@everyone');
+  }
+
+  lines.push(`${titlePrefix}**${analysis.discord_title}**`);
 
   if (isUpdate && analysis.update_summary) {
     lines.push('');
@@ -36,12 +42,17 @@ function buildMessageText(emailData, analysis, isUpdate) {
 async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, isUpdate = false) {
   const content = buildMessageText(emailData, analysis, isUpdate);
   const hasScreenshot = screenshotPath && fs.existsSync(screenshotPath);
+  const pingEveryone = !!analysis.is_wild_turkey_allocated_imminent;
+  const payload = {
+    content,
+    ...(pingEveryone ? { allowed_mentions: { parse: ['everyone'] } } : {}),
+  };
 
   let response;
   if (hasScreenshot) {
     const screenshotBuffer = fs.readFileSync(screenshotPath);
     const formData = new FormData();
-    formData.append('payload_json', JSON.stringify({ content }));
+    formData.append('payload_json', JSON.stringify(payload));
     formData.append('files[0]', new Blob([screenshotBuffer], { type: 'image/png' }), 'screenshot.png');
     response = await fetch(`${webhookUrl}?wait=true`, {
       method: 'POST',
@@ -51,7 +62,7 @@ async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, is
     response = await fetch(`${webhookUrl}?wait=true`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(payload),
     });
   }
 
