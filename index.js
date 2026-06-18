@@ -88,7 +88,7 @@ async function processEmail(auth, messageId) {
       // New event — post it
       console.log(`[${messageId}] New event, posting to Discord`);
       try {
-        discordMessageId = await postToDiscord(config.discord_webhook_url, emailData, analysis, screenshotPath, false);
+        discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, false);
         discordPosted = true;
         console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
         upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
