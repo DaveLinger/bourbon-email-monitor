@@ -59,8 +59,10 @@ function insertEmail(db, data) {
   `).run(data);
 }
 
-function getKnownEvent(db, eventKey) {
-  return db.prepare('SELECT * FROM known_events WHERE event_key = ?').get(eventKey);
+function getKnownEvent(db, eventKey, windowDays = 30) {
+  return db.prepare(
+    `SELECT * FROM known_events WHERE event_key = ? AND last_updated_at >= datetime('now', '-' || ? || ' days')`
+  ).get(eventKey, windowDays);
 }
 
 function upsertKnownEvent(db, eventKey, emailId, discordMessageId, postedDetails) {

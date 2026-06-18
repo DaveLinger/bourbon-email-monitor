@@ -82,7 +82,7 @@ async function processEmail(auth, messageId) {
       await postAlert(config.discord_alerts_webhook_url, `Failed to post release alert for "${emailData.subject}": ${err.message}`);
     }
   } else if (analysis.category === 2 || analysis.category === 4) {
-    const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key) : null;
+    const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key, config.dedup_window_days) : null;
 
     if (!knownEvent) {
       // New event — post it
@@ -91,9 +91,12 @@ async function processEmail(auth, messageId) {
         discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, false);
         discordPosted = true;
         console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
-        upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
+        if (analysis.event_key) {
+          upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
+        }
       } catch (err) {
         console.error(`[${messageId}] Discord post failed: ${err.message}`);
+        await postAlert(config.discord_alerts_webhook_url, `Failed to post announcement for "${emailData.subject}": ${err.message}`);
       }
     } else {
       // Known event — re-classify with previous details to check for meaningful update
