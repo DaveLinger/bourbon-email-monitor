@@ -27,6 +27,7 @@ function buildMessageText(emailData, analysis, isUpdate) {
   if (analysis.price)             bullets.push(`• **Price:** ${analysis.price}`);
   if (analysis.lottery_deadline)  bullets.push(`• **Lottery deadline:** ${analysis.lottery_deadline}`);
   if (analysis.region_availability) bullets.push(`• **Availability:** ${analysis.region_availability}`);
+  if (analysis.action_url)        bullets.push(`• **Link:** ${analysis.action_url}`);
 
   if (bullets.length > 0) {
     lines.push('');

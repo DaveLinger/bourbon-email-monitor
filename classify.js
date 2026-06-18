@@ -2,6 +2,26 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 
+function extractLinks(html) {
+  if (!html) return [];
+  const links = [];
+  const hrefRe = /<a\s[^>]*href=["']([^"'#][^"']*?)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = hrefRe.exec(html)) !== null) {
+    const url = match[1].trim();
+    const text = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    if (!url.startsWith('mailto:') && !url.startsWith('javascript:') && url.length > 5) {
+      links.push({ url, text: text.slice(0, 120) });
+    }
+  }
+  const seen = new Set();
+  return links.filter(l => {
+    if (seen.has(l.url)) return false;
+    seen.add(l.url);
+    return true;
+  }).slice(0, 60);
+}
+
 const SYSTEM_PROMPT = `You are an expert analyst for a bourbon and American whiskey enthusiast. You monitor emails from distilleries, non-distiller producers (NDPs), distributors, and retailers.
 
 Wild Turkey allocated/limited products (for is_wild_turkey_allocated_imminent): Master's Keep series, Russell's Reserve 13/15, Austin Nichols Archive ("Gold Foil"), and any other limited-edition Wild Turkey or Russell's Reserve expressions. NOT allocated: Wild Turkey 101, 81, Longbranch, standard Rare Breed, American Honey, standard Russell's Reserve 10yr/6yr Rye.
@@ -24,7 +44,9 @@ For event_key: create a normalized, canonical identifier for the event/product â
 - "pappy van winkle 2026 allocation announcement"
 - "kentucky owl rye batch 4 release"
 
-Return null for event_key on category 1 emails.`;
+Return null for event_key on category 1 emails.
+
+For action_url: if the email contains a specific call-to-action link the reader should click (purchase link, lottery entry, release access link, subscription confirmation), extract that URL. Exclude unsubscribe links, social media profile links, and generic footer/navigation links. Null for category 1 and when no specific action link exists.`;
 
 const ANALYSIS_SCHEMA = {
   type: 'object',
@@ -42,14 +64,17 @@ const ANALYSIS_SCHEMA = {
     discord_title: { type: 'string', description: 'Short compelling title for the Discord alert with appropriate emoji. Be specific and exciting.' },
     is_meaningful_update: { type: 'boolean', description: 'True if this email has new info worth alerting. Always true for category 3. For cat 2/4 with previous_post_details, only true if material new information is present.' },
     update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' },
-    is_wild_turkey_allocated_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (immediate/right-now release), AND (2) the product is Wild Turkey or Russell\'s Reserve, AND (3) it is an allocated or limited-edition product (Master\'s Keep, Russell\'s Reserve Single Barrel private selections, Diamond Anniversary, etc.). false for standard lineup products or non-category-3 emails.' }
+    is_wild_turkey_allocated_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (immediate/right-now release), AND (2) the product is Wild Turkey or Russell\'s Reserve, AND (3) it is an allocated or limited-edition product (Master\'s Keep, Russell\'s Reserve Single Barrel private selections, Diamond Anniversary, etc.). false for standard lineup products or non-category-3 emails.' },
+    action_url: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Primary call-to-action URL the reader should click (purchase link, lottery entry, release access, subscription confirmation). Exclude unsubscribe, social media, and footer links. Null for cat 1 and when no specific action link exists.' }
   },
-  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_wild_turkey_allocated_imminent'],
+  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_wild_turkey_allocated_imminent', 'action_url'],
   additionalProperties: false
 };
 
 async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEventDetails = null) {
   const client = new Anthropic({ apiKey });
+
+  const links = extractLinks(emailData.html);
 
   const userTextParts = [
     `From: ${emailData.from}`,
@@ -59,6 +84,15 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
     '--- EMAIL TEXT CONTENT ---',
     emailData.text || '(no plain text body)',
   ];
+
+  if (links.length > 0) {
+    userTextParts.push('');
+    userTextParts.push('--- EMAIL LINKS (url | anchor text) ---');
+    for (const l of links) {
+      userTextParts.push(`${l.url} | ${l.text}`);
+    }
+    userTextParts.push('--- END LINKS ---');
+  }
 
   if (previousEventDetails) {
     userTextParts.push('');
