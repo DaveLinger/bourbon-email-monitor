@@ -60,7 +60,7 @@ const ANALYSIS_SCHEMA = {
     price: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Price or MSRP if mentioned' },
     region_availability: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Where available (nationwide, specific states, lottery, etc.)' },
     lottery_deadline: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Lottery entry deadline if applicable' },
-    desirability_score: { type: 'integer', description: '1=low interest to 5=extremely rare and exciting (BTAC/Pappy level)' },
+    desirability_score: { type: 'integer', description: 'How much a serious bourbon collector should care. Scarcity and exclusivity matter MORE than brand fame. 1=no real interest (generic ads, wide-release standard lineup products, multi-category retailer sales); 2=mildly interesting (store picks or private barrel selections of mid-tier products, limited but easily obtainable releases); 3=worth knowing about (exclusive single barrel picks with private/limited access links, hard-to-find regionals, sought-after but not trophy releases); 4=high interest (major annual limited releases like Russell\'s Reserve 13yr, OHLQ exclusives, well-regarded single barrel programs); 5=trophy tier (BTAC, Pappy, rare one-off distillery releases). A store pick with a private purchase link beats a wide public drop of a more famous label.' },
     discord_title: { type: 'string', description: 'Short compelling title for the Discord alert with appropriate emoji. Be specific and exciting.' },
     is_meaningful_update: { type: 'boolean', description: 'True if this email has new info worth alerting. Always true for category 3. For cat 2/4 with previous_post_details, only true if material new information is present.' },
     update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' },
@@ -137,7 +137,10 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
   });
 
   const rawText = response.content.find(b => b.type === 'text')?.text || '{}';
-  return JSON.parse(rawText);
+  const parsed = JSON.parse(rawText);
+  parsed._input_tokens = response.usage?.input_tokens || 0;
+  parsed._output_tokens = response.usage?.output_tokens || 0;
+  return parsed;
 }
 
 module.exports = { analyzeEmail };

@@ -38,6 +38,13 @@ function getDb(dbPath) {
       posted_details TEXT
     );
   `);
+  // Migrations: add token columns if they don't exist yet
+  for (const stmt of [
+    'ALTER TABLE emails ADD COLUMN input_tokens INTEGER DEFAULT 0',
+    'ALTER TABLE emails ADD COLUMN output_tokens INTEGER DEFAULT 0',
+  ]) {
+    try { _db.exec(stmt); } catch {}
+  }
   return _db;
 }
 
@@ -51,12 +58,34 @@ function insertEmail(db, data) {
     INSERT OR REPLACE INTO emails
       (id, received_at, from_addr, subject, category, event_key, summary,
        structured_fields, desirability_score, screenshot_path,
-       discord_posted, discord_message_id, llm_response)
+       discord_posted, discord_message_id, llm_response,
+       input_tokens, output_tokens)
     VALUES
       (@id, @received_at, @from_addr, @subject, @category, @event_key, @summary,
        @structured_fields, @desirability_score, @screenshot_path,
-       @discord_posted, @discord_message_id, @llm_response)
+       @discord_posted, @discord_message_id, @llm_response,
+       @input_tokens, @output_tokens)
   `).run(data);
+}
+
+function getLlmStats(db) {
+  const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD' UTC
+  const today = db.prepare(`
+    SELECT COUNT(*) as emails, COALESCE(SUM(discord_posted), 0) as posted,
+           COALESCE(SUM(input_tokens), 0) as input_tokens,
+           COALESCE(SUM(output_tokens), 0) as output_tokens
+    FROM emails WHERE processed_at >= ?
+  `).get(todayStr);
+  const month = db.prepare(`
+    SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
+           COALESCE(SUM(output_tokens), 0) as output_tokens
+    FROM emails WHERE processed_at >= date('now', 'start of month')
+  `).get();
+  const categories = db.prepare(`
+    SELECT category, COUNT(*) as cnt FROM emails
+    WHERE processed_at >= ? GROUP BY category ORDER BY category
+  `).all(todayStr);
+  return { today, month, categories };
 }
 
 function getKnownEvent(db, eventKey, windowDays = 30) {
@@ -84,4 +113,4 @@ function upsertKnownEvent(db, eventKey, emailId, discordMessageId, postedDetails
   }
 }
 
-module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent };
+module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent, getLlmStats };

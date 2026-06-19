@@ -3,21 +3,22 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
-async function renderEmailToScreenshot(html, outputPath) {
+async function launchBrowser() {
+  return chromium.launch();
+}
+
+async function renderEmailToScreenshot(html, outputPath, sharedBrowser = null) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
-  // If no HTML, wrap plain text
   const content = html || '<pre style="font-family:sans-serif;padding:16px;white-space:pre-wrap;">(no HTML body)</pre>';
 
-  const browser = await chromium.launch();
+  const browser = sharedBrowser || await chromium.launch();
   try {
     const page = await browser.newPage();
     await page.setViewportSize({ width: 1000, height: 900 });
 
-    // Block external resources that would delay rendering or fail silently
     await page.route('**/*', (route) => {
       const resourceType = route.request().resourceType();
-      // Allow stylesheets and fonts; block tracking pixels and third-party scripts
       if (['document', 'stylesheet', 'font', 'image'].includes(resourceType)) {
         route.continue();
       } else {
@@ -26,16 +27,14 @@ async function renderEmailToScreenshot(html, outputPath) {
     });
 
     await page.setContent(content, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-    // Brief pause for CSS/web fonts to settle
     await page.waitForTimeout(500);
-
     await page.screenshot({ path: outputPath, fullPage: true });
+    await page.close();
   } finally {
-    await browser.close();
+    if (!sharedBrowser) await browser.close();
   }
 
   return outputPath;
 }
 
-module.exports = { renderEmailToScreenshot };
+module.exports = { launchBrowser, renderEmailToScreenshot };

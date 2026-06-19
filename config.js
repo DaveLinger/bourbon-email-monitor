@@ -20,6 +20,9 @@ function loadConfig() {
   _config.db_path = path.resolve(__dirname, _config.db_path || './emails.db');
   _config.dedup_window_days = _config.dedup_window_days || 30;
   _config.model = _config.model || 'claude-sonnet-4-6';
+  _config.min_desirability_cat4 = _config.min_desirability_cat4 ?? 2;
+  _config.llm_input_cost_per_million = _config.llm_input_cost_per_million ?? 3.00;
+  _config.llm_output_cost_per_million = _config.llm_output_cost_per_million ?? 15.00;
   return _config;
 }
 

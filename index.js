@@ -2,17 +2,49 @@
 const path = require('path');
 const fs = require('fs');
 const { loadConfig } = require('./config');
-const { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent } = require('./db');
+const { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent, getLlmStats } = require('./db');
 const { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead } = require('./gmail');
-const { renderEmailToScreenshot } = require('./screenshot');
+const { launchBrowser, renderEmailToScreenshot } = require('./screenshot');
 const { analyzeEmail } = require('./classify');
-const { postToDiscord, postAlert } = require('./notify');
+const { postToDiscord, postAlert, postHeartbeat } = require('./notify');
 
 const config = loadConfig();
 const db = getDb(config.db_path);
 fs.mkdirSync(config.screenshot_dir, { recursive: true });
 
-async function processEmail(auth, messageId) {
+let lastDailyDate = null;
+
+async function runDailyMaintenance() {
+  // Clean up screenshots older than 30 days
+  const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  let cleaned = 0;
+  try {
+    for (const file of fs.readdirSync(config.screenshot_dir)) {
+      if (!file.endsWith('.png')) continue;
+      const filePath = path.join(config.screenshot_dir, file);
+      try {
+        if (fs.statSync(filePath).mtimeMs < cutoffMs) {
+          fs.unlinkSync(filePath);
+          cleaned++;
+        }
+      } catch {}
+    }
+    if (cleaned > 0) console.log(`Cleaned up ${cleaned} old screenshot(s)`);
+  } catch (err) {
+    console.warn(`Screenshot cleanup failed: ${err.message}`);
+  }
+
+  // Post heartbeat with email counts and LLM cost
+  try {
+    const stats = getLlmStats(db);
+    await postHeartbeat(config.discord_alerts_webhook_url, stats, config);
+    console.log('Heartbeat posted');
+  } catch (err) {
+    console.error(`Heartbeat failed: ${err.message}`);
+  }
+}
+
+async function processEmail(auth, messageId, browser) {
   if (isProcessed(db, messageId)) {
     console.log(`[${messageId}] Already processed, skipping`);
     return;
@@ -25,21 +57,23 @@ async function processEmail(auth, messageId) {
   // Screenshot
   const screenshotPath = path.join(config.screenshot_dir, `${messageId}.png`);
   try {
-    await renderEmailToScreenshot(emailData.html || null, screenshotPath);
+    await renderEmailToScreenshot(emailData.html || null, screenshotPath, browser);
     console.log(`[${messageId}] Screenshot saved`);
   } catch (err) {
     console.warn(`[${messageId}] Screenshot failed: ${err.message}`);
   }
 
-  // Check if we've seen this event before (for smart dedup context)
-  // We won't know the event_key until after classification, so we classify first,
-  // then re-classify with context if needed.
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+
   let analysis = await analyzeEmail(
     config.anthropic_api_key,
     config.model,
     emailData,
     screenshotPath
   );
+  totalInputTokens += analysis._input_tokens || 0;
+  totalOutputTokens += analysis._output_tokens || 0;
 
   console.log(`[${messageId}] Category: ${analysis.category} | Event key: ${analysis.event_key}`);
 
@@ -82,6 +116,11 @@ async function processEmail(auth, messageId) {
       await postAlert(config.discord_alerts_webhook_url, `Failed to post release alert for "${emailData.subject}": ${err.message}`);
     }
   } else if (analysis.category === 2 || analysis.category === 4) {
+    // Skip low-desirability category 4 (generic retailer sales)
+    if (analysis.category === 4 && analysis.desirability_score < config.min_desirability_cat4) {
+      console.log(`[${messageId}] Category 4 with desirability ${analysis.desirability_score} < threshold (${config.min_desirability_cat4}), skipping`);
+    } else {
+
     const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key, config.dedup_window_days) : null;
 
     if (!knownEvent) {
@@ -110,6 +149,8 @@ async function processEmail(auth, messageId) {
         screenshotPath,
         previousDetails
       );
+      totalInputTokens += updateAnalysis._input_tokens || 0;
+      totalOutputTokens += updateAnalysis._output_tokens || 0;
 
       if (updateAnalysis.is_meaningful_update) {
         isUpdate = true;
@@ -128,6 +169,7 @@ async function processEmail(auth, messageId) {
         console.log(`[${messageId}] Duplicate with no new info, skipping Discord`);
       }
     }
+    } // end desirability filter else
   }
 
   // Mark as read in Gmail
@@ -158,23 +200,37 @@ async function processEmail(auth, messageId) {
     discord_posted: discordPosted ? 1 : 0,
     discord_message_id: discordMessageId,
     llm_response: JSON.stringify(analysis),
+    input_tokens: totalInputTokens,
+    output_tokens: totalOutputTokens,
   });
 
   console.log(`[${messageId}] Done (category=${analysis.category}, posted=${discordPosted})`);
 }
 
 async function poll(auth) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== lastDailyDate) {
+    lastDailyDate = today;
+    await runDailyMaintenance();
+  }
+
   console.log(`[${new Date().toISOString()}] Polling for new emails...`);
   try {
     const ids = await fetchUnreadIds(auth);
     console.log(`Found ${ids.length} unread message(s)`);
-    for (const id of ids) {
-      try {
-        await processEmail(auth, id);
-      } catch (err) {
-        console.error(`Error processing message ${id}:`, err.message);
-        // Continue to next email even if one fails
+    if (ids.length === 0) return;
+
+    const browser = await launchBrowser();
+    try {
+      for (const id of ids) {
+        try {
+          await processEmail(auth, id, browser);
+        } catch (err) {
+          console.error(`Error processing message ${id}:`, err.message);
+        }
       }
+    } finally {
+      await browser.close();
     }
   } catch (err) {
     console.error('Poll error:', err.message);
