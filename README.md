@@ -113,12 +113,12 @@ SQLite at `emails.db`:
 
 ## Desirability scores
 
-Scores rank 1–5 with scarcity and exclusivity weighted over brand fame:
+Scores rank 1–5. Exclusivity of **access** matters most — a statewide public drop (OHLQ, FWGS) is not truly scarce even if it's state-only.
 
 | Score | Examples |
 |---|---|
-| 1 | Generic ads, standard lineup products, multi-category retailer sales |
-| 2 | Store picks / private barrel selections of mid-tier products |
-| 3 | Exclusive single barrel picks with private/limited access links, hard-to-find regionals |
-| 4 | Major annual limited releases (Russell's Reserve 13yr, OHLQ exclusives) |
-| 5 | Trophy tier: BTAC, Pappy, rare one-off distillery releases |
+| 1 | Generic ads, standard lineup products, multi-category retailer blowout sales |
+| 2 | Mid-tier store picks, widely obtainable limited releases, statewide public drops (OHLQ/FWGS exclusive barrels) |
+| 3 | Single barrel picks with genuinely private/limited purchase links, hard-to-find regionals |
+| 4 | Major annual allocated hunts: Russell's Reserve 13yr Barrel Proof, Eagle Rare 12, Old Forester Birthday Bourbon, Old Forester President's Choice, Elijah Craig 21 |
+| 5 | Trophy tier: BTAC (Stagg, WLW, Handy, Sazerac 18, Eagle Rare 17), Pappy Van Winkle, Russell's Reserve 15yr, Austin Nichols Archive (Gold Foil), Jack Daniel's 14yr, Heaven Hill 22yr |
