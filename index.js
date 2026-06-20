@@ -106,9 +106,10 @@ async function processEmail(auth, messageId, browser) {
     }
   } else if (analysis.category === 3) {
     // Immediate release — always post, no dedup
-    console.log(`[${messageId}] Category 3 (immediate release), posting to Discord`);
+    const releaseWebhook = analysis.is_regional ? config.discord_regional_webhook_url : config.discord_releases_webhook_url;
+    console.log(`[${messageId}] Category 3 (immediate release), posting to Discord (${analysis.is_regional ? 'regional' : 'releases'})`);
     try {
-      discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, false);
+      discordMessageId = await postToDiscord(releaseWebhook, emailData, analysis, screenshotPath, false);
       discordPosted = true;
       console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
       if (analysis.event_key) {
@@ -124,13 +125,14 @@ async function processEmail(auth, messageId, browser) {
       console.log(`[${messageId}] Category 4 with desirability ${analysis.desirability_score} < threshold (${config.min_desirability_cat4}), skipping`);
     } else {
 
+    const announcementWebhook = analysis.is_regional ? config.discord_regional_webhook_url : config.discord_releases_webhook_url;
     const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key, config.dedup_window_days) : null;
 
     if (!knownEvent) {
       // New event — post it
-      console.log(`[${messageId}] New event, posting to Discord`);
+      console.log(`[${messageId}] New event, posting to Discord (${analysis.is_regional ? 'regional' : 'releases'})`);
       try {
-        discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, false);
+        discordMessageId = await postToDiscord(announcementWebhook, emailData, analysis, screenshotPath, false);
         discordPosted = true;
         console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
         if (analysis.event_key) {
@@ -160,7 +162,7 @@ async function processEmail(auth, messageId, browser) {
         analysis = updateAnalysis;
         console.log(`[${messageId}] Meaningful update found: ${updateAnalysis.update_summary}`);
         try {
-          discordMessageId = await postToDiscord(config.discord_releases_webhook_url, emailData, analysis, screenshotPath, true);
+          discordMessageId = await postToDiscord(announcementWebhook, emailData, analysis, screenshotPath, true);
           discordPosted = true;
           console.log(`[${messageId}] Update posted to Discord (message ${discordMessageId})`);
           upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
