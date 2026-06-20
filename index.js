@@ -85,12 +85,15 @@ async function processEmail(auth, messageId, browser) {
     // Discard — just log it
     console.log(`[${messageId}] Category 1 (ad), discarding`);
   } else if (analysis.category === 5) {
-    // Action required — ping the alerts channel
+    // Action required — post with screenshot to alerts channel
     console.log(`[${messageId}] Category 5 (action required), posting to alerts`);
-    await postAlert(
-      config.discord_alerts_webhook_url,
-      `📬 **Action required:** ${emailData.subject}\nFrom: ${emailData.from}`
-    ).catch(err => console.error(`[${messageId}] Alert post failed: ${err.message}`));
+    try {
+      const actionAnalysis = { ...analysis, discord_title: `📬 Action required: ${analysis.discord_title}` };
+      await postToDiscord(config.discord_alerts_webhook_url, emailData, actionAnalysis, screenshotPath, false);
+      discordPosted = true;
+    } catch (err) {
+      console.error(`[${messageId}] Action required post failed: ${err.message}`);
+    }
   } else if (analysis.category === 6) {
     // Uncategorized — post screenshot to alerts for human triage
     console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
