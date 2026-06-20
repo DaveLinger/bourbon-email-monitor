@@ -69,7 +69,8 @@ function insertEmail(db, data) {
 }
 
 function getLlmStats(db) {
-  const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD' UTC
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const today = db.prepare(`
     SELECT COUNT(*) as emails, COALESCE(SUM(discord_posted), 0) as posted,
            COALESCE(SUM(input_tokens), 0) as input_tokens,

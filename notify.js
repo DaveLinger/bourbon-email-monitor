@@ -116,7 +116,7 @@ async function postHeartbeat(webhookUrl, stats, config) {
   const fmt = n => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   const lines = [
-    `✅ **email-monitor** alive — ${new Date().toISOString().slice(0, 10)}`,
+    `✅ **email-monitor** alive — ${(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })()}`,
     ``,
     `📧 **Today:** ${today.emails} processed (${catStr}) · ${today.posted} posted to Discord`,
     `🤖 **LLM today:** ~$${todayCost} (${fmt(today.input_tokens)} in / ${fmt(today.output_tokens)} out tokens)`,
