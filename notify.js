@@ -56,7 +56,7 @@ function buildMessageText(emailData, analysis, isUpdate) {
 async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, isUpdate = false) {
   const content = buildMessageText(emailData, analysis, isUpdate);
   const hasScreenshot = screenshotPath && fs.existsSync(screenshotPath);
-  const pingEveryone = !!analysis.is_wild_turkey_allocated_imminent;
+  const pingEveryone = !!analysis.is_wild_turkey_allocated_imminent && !analysis.is_regional;
   const payload = {
     content,
     ...(pingEveryone ? { allowed_mentions: { parse: ['everyone'] } } : {}),
