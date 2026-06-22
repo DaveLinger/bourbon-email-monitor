@@ -34,9 +34,11 @@ async function runDailyMaintenance() {
     console.warn(`Screenshot cleanup failed: ${err.message}`);
   }
 
-  // Post heartbeat with email counts and LLM cost
+  // Post heartbeat with email counts and LLM cost (report yesterday — heartbeat fires at day rollover)
   try {
-    const stats = getLlmStats(db);
+    const yesterday = new Date(Date.now() - 86400000);
+    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    const stats = getLlmStats(db, yesterdayStr);
     await postHeartbeat(config.discord_alerts_webhook_url, stats, config);
     console.log('Heartbeat posted');
   } catch (err) {

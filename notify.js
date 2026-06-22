@@ -118,8 +118,8 @@ async function postHeartbeat(webhookUrl, stats, config) {
   const lines = [
     `✅ **email-monitor** alive — ${(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })()}`,
     ``,
-    `📧 **Today:** ${today.emails} processed (${catStr}) · ${today.posted} posted to Discord`,
-    `🤖 **LLM today:** ~$${todayCost} (${fmt(today.input_tokens)} in / ${fmt(today.output_tokens)} out tokens)`,
+    `📧 **Yesterday:** ${today.emails} processed (${catStr}) · ${today.posted} posted to Discord`,
+    `🤖 **LLM yesterday:** ~$${todayCost} (${fmt(today.input_tokens)} in / ${fmt(today.output_tokens)} out tokens)`,
     `💰 **LLM this month:** ~$${monthCost} (${fmt(month.input_tokens)} in / ${fmt(month.output_tokens)} out tokens)`,
   ];
 
