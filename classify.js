@@ -1,9 +1,22 @@
 'use strict';
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
-const PING_ROSTER = require('./roster');
+// Hot-reload roster.js on each analysis so edits take effect without a restart.
+// Falls back to the last good copy if the file is mid-edit / syntactically broken.
+let lastGoodRoster = null;
+function loadRoster() {
+  try {
+    delete require.cache[require.resolve('./roster')];
+    lastGoodRoster = require('./roster');
+  } catch (err) {
+    if (!lastGoodRoster) throw err;
+    console.warn(`roster.js reload failed (${err.message}); using last good copy`);
+  }
+  return lastGoodRoster;
+}
+loadRoster(); // validate at boot and seed the fallback copy
 
-// Render roster.js into a readable prompt block. The LLM matches each email
+// Render the roster into a readable prompt block. The LLM matches each email
 // against this list to decide the is_ping_worthy_imminent flag.
 function renderPingRoster(roster) {
   const lines = [];
@@ -40,10 +53,11 @@ function extractLinks(html) {
   }).slice(0, 60);
 }
 
-const SYSTEM_PROMPT = `You are an expert analyst for a bourbon and American whiskey enthusiast. You monitor emails from distilleries, non-distiller producers (NDPs), distributors, and retailers.
+function buildSystemPrompt() {
+  return `You are an expert analyst for a bourbon and American whiskey enthusiast. You monitor emails from distilleries, non-distiller producers (NDPs), distributors, and retailers.
 
 @EVERYONE PING ROSTER (for is_ping_worthy_imminent): only flag an IMMEDIATE (category 3, available right now) release of a rare/allocated product from a brand marked PING below.
-${renderPingRoster(PING_ROSTER)}
+${renderPingRoster(loadRoster())}
 For a PING brand, if the specific bottle is not named in either list, use judgment: flag it only if it is clearly a rare, allocated, or limited release â€” not a standard-lineup bottle. For any brand NOT listed above, do not flag.
 
 Your job is to classify each email into one of these categories:
@@ -67,6 +81,7 @@ For event_key: create a normalized, canonical identifier for the event/product â
 Return null for event_key on category 1 emails.
 
 For action_url: if the email contains a specific call-to-action link the reader should click (purchase link, lottery entry, release access link, subscription confirmation), extract that URL. Exclude unsubscribe links, social media profile links, and generic footer/navigation links. Null for category 1 and when no specific action link exists.`;
+}
 
 const ANALYSIS_SCHEMA = {
   type: 'object',
@@ -147,7 +162,7 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
   const response = await client.messages.create({
     model,
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(),
     thinking: { type: 'disabled' },
     messages: [{ role: 'user', content }],
     output_config: {
