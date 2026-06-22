@@ -140,10 +140,10 @@ async function postAlert(webhookUrl, message) {
 const CAT_LABELS = { 1: 'ad', 2: 'announcement', 3: 'release', 4: 'sale', 5: 'action', 6: 'triage' };
 
 async function postHeartbeat(webhookUrl, stats, config) {
-  const { today, month, categories } = stats;
+  const { recent, month, categories } = stats;
   const inRate = config.llm_input_cost_per_million / 1_000_000;
   const outRate = config.llm_output_cost_per_million / 1_000_000;
-  const todayCost = (today.input_tokens * inRate + today.output_tokens * outRate).toFixed(4);
+  const recentCost = (recent.input_tokens * inRate + recent.output_tokens * outRate).toFixed(4);
   const monthCost = (month.input_tokens * inRate + month.output_tokens * outRate).toFixed(2);
 
   const catStr = categories.length
@@ -155,8 +155,8 @@ async function postHeartbeat(webhookUrl, stats, config) {
   const lines = [
     `✅ **email-monitor** alive — ${(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })()}`,
     ``,
-    `📧 **Yesterday:** ${today.emails} processed (${catStr}) · ${today.posted} posted to Discord`,
-    `🤖 **LLM yesterday:** ~$${todayCost} (${fmt(today.input_tokens)} in / ${fmt(today.output_tokens)} out tokens)`,
+    `📧 **Last 24h:** ${recent.emails} processed (${catStr}) · ${recent.posted} posted to Discord`,
+    `🤖 **LLM (last 24h):** ~$${recentCost} (${fmt(recent.input_tokens)} in / ${fmt(recent.output_tokens)} out tokens)`,
     `💰 **LLM this month:** ~$${monthCost} (${fmt(month.input_tokens)} in / ${fmt(month.output_tokens)} out tokens)`,
   ];
 

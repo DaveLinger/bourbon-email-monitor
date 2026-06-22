@@ -68,18 +68,16 @@ function insertEmail(db, data) {
   `).run(data);
 }
 
-function getLlmStats(db, dateStr) {
-  const now = new Date();
-  if (!dateStr) {
-    dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  }
-  const todayStr = dateStr;
-  const today = db.prepare(`
+function getLlmStats(db) {
+  // Rolling trailing 24h window — same span regardless of when the heartbeat
+  // fires (day rollover vs. a restart mid-day). Stored timestamps and
+  // datetime('now') are both UTC, so the comparison is internally consistent.
+  const recent = db.prepare(`
     SELECT COUNT(*) as emails, COALESCE(SUM(discord_posted), 0) as posted,
            COALESCE(SUM(input_tokens), 0) as input_tokens,
            COALESCE(SUM(output_tokens), 0) as output_tokens
-    FROM emails WHERE processed_at >= ?
-  `).get(todayStr);
+    FROM emails WHERE processed_at >= datetime('now', '-1 day')
+  `).get();
   const month = db.prepare(`
     SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
            COALESCE(SUM(output_tokens), 0) as output_tokens
@@ -87,9 +85,9 @@ function getLlmStats(db, dateStr) {
   `).get();
   const categories = db.prepare(`
     SELECT category, COUNT(*) as cnt FROM emails
-    WHERE processed_at >= ? GROUP BY category ORDER BY category
-  `).all(todayStr);
-  return { today, month, categories };
+    WHERE processed_at >= datetime('now', '-1 day') GROUP BY category ORDER BY category
+  `).all();
+  return { recent, month, categories };
 }
 
 function getKnownEvent(db, eventKey, windowDays = 30) {

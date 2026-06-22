@@ -28,7 +28,24 @@ async function renderEmailToScreenshot(html, outputPath, sharedBrowser = null) {
 
     await page.setContent(content, { waitUntil: 'domcontentloaded', timeout: 15000 });
     await page.waitForTimeout(500);
-    await page.screenshot({ path: outputPath, fullPage: true });
+
+    // Anthropic rejects images with any dimension > 8000px. Long newsletter
+    // digests render taller than that, so clip the capture to stay under it.
+    // (Clips the bottom of very long emails; key release info is near the top.)
+    const MAX_DIM = 7800;
+    const dims = await page.evaluate(() => ({
+      width: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+      height: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+    }));
+    if (dims.width > MAX_DIM || dims.height > MAX_DIM) {
+      console.warn(`Email renders to ${dims.width}x${dims.height}px; clipping to ${MAX_DIM}px`);
+      await page.screenshot({
+        path: outputPath,
+        clip: { x: 0, y: 0, width: Math.min(dims.width, MAX_DIM), height: Math.min(dims.height, MAX_DIM) },
+      });
+    } else {
+      await page.screenshot({ path: outputPath, fullPage: true });
+    }
     await page.close();
   } finally {
     if (!sharedBrowser) await browser.close();

@@ -128,8 +128,10 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
     model,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
+    thinking: { type: 'disabled' },
     messages: [{ role: 'user', content }],
     output_config: {
+      effort: 'low',
       format: {
         type: 'json_schema',
         schema: ANALYSIS_SCHEMA,
