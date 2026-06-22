@@ -13,9 +13,10 @@ function routeFor(analysis, config) {
     ? config.discord_regional_webhook_url
     : config.discord_releases_webhook_url;
 
-  // @everyone is reserved for imminent Wild Turkey allocated drops, and only on
-  // the national channel — regional drops never ping the whole server.
-  const pingEveryone = !!analysis.is_wild_turkey_allocated_imminent && !analysis.is_regional;
+  // @everyone is reserved for imminent rare/allocated drops from a roster brand
+  // (see roster.js / the classifier), and only on the national channel —
+  // regional drops never ping the whole server.
+  const pingEveryone = !!analysis.is_ping_worthy_imminent && !analysis.is_regional;
 
   return { webhook, pingEveryone };
 }

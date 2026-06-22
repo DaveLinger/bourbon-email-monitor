@@ -1,6 +1,24 @@
 'use strict';
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
+const PING_ROSTER = require('./roster');
+
+// Render roster.js into a readable prompt block. The LLM matches each email
+// against this list to decide the is_ping_worthy_imminent flag.
+function renderPingRoster(roster) {
+  const lines = [];
+  for (const [brand, policy] of Object.entries(roster)) {
+    if (!policy.ping) {
+      lines.push(`- ${brand}: never ping.`);
+      continue;
+    }
+    let line = `- ${brand}: PING for rare/allocated releases.`;
+    if (policy.triggers && policy.triggers.length) line += ` Examples that SHOULD ping: ${policy.triggers.join(', ')}.`;
+    if (policy.excludes && policy.excludes.length) line += ` Do NOT ping for: ${policy.excludes.join(', ')}.`;
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
 
 function extractLinks(html) {
   if (!html) return [];
@@ -24,7 +42,9 @@ function extractLinks(html) {
 
 const SYSTEM_PROMPT = `You are an expert analyst for a bourbon and American whiskey enthusiast. You monitor emails from distilleries, non-distiller producers (NDPs), distributors, and retailers.
 
-Wild Turkey allocated/limited products (for is_wild_turkey_allocated_imminent): Master's Keep series, Russell's Reserve 13/15, Austin Nichols Archive ("Gold Foil"), and any other limited-edition Wild Turkey or Russell's Reserve expressions. NOT allocated: Wild Turkey 101, 81, Longbranch, standard Rare Breed, American Honey, standard Russell's Reserve 10yr/6yr Rye.
+@EVERYONE PING ROSTER (for is_ping_worthy_imminent): only flag an IMMEDIATE (category 3, available right now) release of a rare/allocated product from a brand marked PING below.
+${renderPingRoster(PING_ROSTER)}
+For a PING brand, if the specific bottle is not named in either list, use judgment: flag it only if it is clearly a rare, allocated, or limited release — not a standard-lineup bottle. For any brand NOT listed above, do not flag.
 
 Your job is to classify each email into one of these categories:
 1 - Advertisement for existing, already-released products (promotional emails, "buy now", general brand awareness, existing product spotlights). These are common and NOT worth alerting.
@@ -65,10 +85,10 @@ const ANALYSIS_SCHEMA = {
     is_meaningful_update: { type: 'boolean', description: 'True if this email has new info worth alerting. Always true for category 3. For cat 2/4 with previous_post_details, only true if material new information is present.' },
     update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' },
     is_regional: { type: 'boolean', description: 'true ONLY if the release, event, or sale is EXCLUSIVELY regional or local with NO national availability component — requires physical presence OR is only available in specific states via state-controlled distribution (e.g. OHLQ, FWGS, PLCB) with no online/ship-to-home option. If a release has BOTH a local event AND nationwide online ordering, it is false. Examples: OHLQ barrel pick (Ohio only, no online order) → true; Buffalo Trace local tasting event where the product is also available to order online nationally → false; Buffalo Trace local tasting event for a product with no other purchase path → true; Pappy online ship-to-home → false; BTAC nationwide lottery → false.' },
-    is_wild_turkey_allocated_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (immediate/right-now release), AND (2) the product is Wild Turkey or Russell\'s Reserve, AND (3) it is an allocated or limited-edition product (Master\'s Keep, Russell\'s Reserve 13yr, Russell\'s Reserve 15yr, Austin Nichols Archive / Gold Foil, Diamond Anniversary, etc.) — single barrel private selections and statewide retailer picks do NOT qualify. false for standard lineup products or non-category-3 emails.' },
+    is_ping_worthy_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (an immediate, available-right-now release), AND (2) the product is from a brand marked PING in the @everyone ping roster in the system prompt, AND (3) the specific bottle is a rare/allocated release per that roster — a named trigger example, or (if unnamed) clearly a rare/allocated/limited expression rather than a standard-lineup or excluded bottle. false for standard products, brands not marked PING, and non-category-3 emails.' },
     action_url: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Primary call-to-action URL the reader should click (purchase link, lottery entry, release access, subscription confirmation). Exclude unsubscribe, social media, and footer links. Null for cat 1 and when no specific action link exists.' }
   },
-  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_regional', 'is_wild_turkey_allocated_imminent', 'action_url'],
+  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_regional', 'is_ping_worthy_imminent', 'action_url'],
   additionalProperties: false
 };
 
