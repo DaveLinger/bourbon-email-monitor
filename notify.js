@@ -53,11 +53,11 @@ async function withRetry(fn, maxAttempts = 3, baseDelayMs = 2000) {
   }
 }
 
-function buildMessageText(emailData, analysis, isUpdate) {
+function buildMessageText(emailData, analysis, isUpdate, pingEveryone) {
   const titlePrefix = isUpdate ? '📢 **UPDATE:** ' : '';
   const lines = [];
 
-  if (analysis.is_wild_turkey_allocated_imminent) {
+  if (pingEveryone) {
     lines.push('@everyone');
   }
 
@@ -90,10 +90,10 @@ function buildMessageText(emailData, analysis, isUpdate) {
   return lines.join('\n');
 }
 
-async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, isUpdate = false) {
-  const content = buildMessageText(emailData, analysis, isUpdate);
+async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, options = {}) {
+  const { isUpdate = false, pingEveryone = false } = options;
+  const content = buildMessageText(emailData, analysis, isUpdate, pingEveryone);
   const hasScreenshot = screenshotPath && fs.existsSync(screenshotPath);
-  const pingEveryone = !!analysis.is_wild_turkey_allocated_imminent && !analysis.is_regional;
   const payload = {
     content,
     ...(pingEveryone ? { allowed_mentions: { parse: ['everyone'] } } : {}),

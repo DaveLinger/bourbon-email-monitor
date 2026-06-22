@@ -7,6 +7,7 @@ const { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead } 
 const { launchBrowser, renderEmailToScreenshot } = require('./screenshot');
 const { analyzeEmail } = require('./classify');
 const { postToDiscord, postAlert, postHeartbeat } = require('./notify');
+const { routeFor } = require('./routing');
 
 const config = loadConfig();
 const db = getDb(config.db_path);
@@ -67,7 +68,7 @@ async function handleActionRequired(ctx) {
   console.log(`[${messageId}] Category 5 (action required), posting to alerts`);
   try {
     const actionAnalysis = { ...analysis, discord_title: `📬 Action required: ${analysis.discord_title}` };
-    await postToDiscord(config.discord_alerts_webhook_url, emailData, actionAnalysis, screenshotPath, false);
+    await postToDiscord(config.discord_alerts_webhook_url, emailData, actionAnalysis, screenshotPath);
     return { discordPosted: true };
   } catch (err) {
     console.error(`[${messageId}] Action required post failed: ${err.message}`);
@@ -80,7 +81,7 @@ async function handleTriage(ctx) {
   console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
   try {
     const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
-    await postToDiscord(config.discord_alerts_webhook_url, emailData, triageAnalysis, screenshotPath, false);
+    await postToDiscord(config.discord_alerts_webhook_url, emailData, triageAnalysis, screenshotPath);
     return { discordPosted: true };
   } catch (err) {
     console.error(`[${messageId}] Triage alert post failed: ${err.message}`);
@@ -90,10 +91,10 @@ async function handleTriage(ctx) {
 
 async function handleImmediateRelease(ctx) {
   const { db, config, messageId, emailData, analysis, screenshotPath } = ctx;
-  const webhook = analysis.is_regional ? config.discord_regional_webhook_url : config.discord_releases_webhook_url;
+  const { webhook, pingEveryone } = routeFor(analysis, config);
   console.log(`[${messageId}] Category 3 (immediate release), posting to Discord (${analysis.is_regional ? 'regional' : 'releases'})`);
   try {
-    const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, false);
+    const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, { pingEveryone });
     console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
     if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
     return { discordPosted: true, discordMessageId };
@@ -113,14 +114,14 @@ async function handleAnnouncement(ctx) {
     return {};
   }
 
-  const webhook = analysis.is_regional ? config.discord_regional_webhook_url : config.discord_releases_webhook_url;
   const knownEvent = analysis.event_key ? getKnownEvent(db, analysis.event_key, config.dedup_window_days) : null;
 
   if (!knownEvent) {
     // New event — post it
+    const { webhook, pingEveryone } = routeFor(analysis, config);
     console.log(`[${messageId}] New event, posting to Discord (${analysis.is_regional ? 'regional' : 'releases'})`);
     try {
-      const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, false);
+      const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, { pingEveryone });
       console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
       if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
       return { discordPosted: true, discordMessageId };
@@ -143,8 +144,9 @@ async function handleAnnouncement(ctx) {
   }
 
   console.log(`[${messageId}] Meaningful update found: ${updateAnalysis.update_summary}`);
+  const { webhook, pingEveryone } = routeFor(updateAnalysis, config);
   try {
-    const discordMessageId = await postToDiscord(webhook, emailData, updateAnalysis, screenshotPath, true);
+    const discordMessageId = await postToDiscord(webhook, emailData, updateAnalysis, screenshotPath, { isUpdate: true, pingEveryone });
     console.log(`[${messageId}] Update posted to Discord (message ${discordMessageId})`);
     upsertKnownEvent(db, updateAnalysis.event_key, messageId, discordMessageId, updateAnalysis);
     return { discordPosted: true, discordMessageId, analysis: updateAnalysis, tokens };
