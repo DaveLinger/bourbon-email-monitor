@@ -3,6 +3,43 @@ const fs = require('fs');
 
 const STAR_RATINGS = ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function offsetToAbbrev(sign, hours, month) {
+  const dst = month >= 3 && month <= 11;
+  const offset = sign === '-' ? -hours : hours;
+  const map = dst
+    ? { '-4': 'EDT', '-5': 'CDT', '-6': 'MDT', '-7': 'PDT' }
+    : { '-5': 'EST', '-6': 'CST', '-7': 'MST', '-8': 'PST' };
+  return map[String(offset)] || `UTC${sign}${hours}`;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return dateStr;
+  const dtMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?([+-]\d{2}:\d{2}|Z)?/);
+  if (dtMatch) {
+    const [, year, month, day, hour, min, tz] = dtMatch;
+    const [y, mo, d, h, mi] = [year, month, day, hour, min].map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const fmt12 = h % 12 || 12;
+    const m = String(mi).padStart(2, '0');
+    let tzLabel = '';
+    if (tz === 'Z') {
+      tzLabel = ' UTC';
+    } else if (tz) {
+      const offMatch = tz.match(/([+-])(\d{2}):\d{2}/);
+      if (offMatch) tzLabel = ` ${offsetToAbbrev(offMatch[1], parseInt(offMatch[2]), mo)}`;
+    }
+    return `${MONTHS[mo - 1]} ${d}, ${y} at ${fmt12}:${m} ${ampm}${tzLabel}`;
+  }
+  const dateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateMatch) {
+    const [, year, month, day] = dateMatch.map(Number);
+    return `${MONTHS[month - 1]} ${day}, ${year}`;
+  }
+  return dateStr;
+}
+
 async function withRetry(fn, maxAttempts = 3, baseDelayMs = 2000) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -36,7 +73,7 @@ function buildMessageText(emailData, analysis, isUpdate) {
 
   const bullets = [];
   if (analysis.product_name)      bullets.push(`• **Product:** ${analysis.product_name}`);
-  if (analysis.release_date)      bullets.push(`• **Date:** ${analysis.release_date}`);
+  if (analysis.release_date)      bullets.push(`• **Date:** ${formatDate(analysis.release_date)}`);
   if (analysis.price)             bullets.push(`• **Price:** ${analysis.price}`);
   if (analysis.lottery_deadline)  bullets.push(`• **Lottery deadline:** ${analysis.lottery_deadline}`);
   if (analysis.region_availability) bullets.push(`• **Availability:** ${analysis.region_availability}`);
