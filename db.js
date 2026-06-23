@@ -38,10 +38,11 @@ function getDb(dbPath) {
       posted_details TEXT
     );
   `);
-  // Migrations: add token columns if they don't exist yet
+  // Migrations: add columns if they don't exist yet
   for (const stmt of [
     'ALTER TABLE emails ADD COLUMN input_tokens INTEGER DEFAULT 0',
     'ALTER TABLE emails ADD COLUMN output_tokens INTEGER DEFAULT 0',
+    'ALTER TABLE known_events ADD COLUMN discord_event_id TEXT',
   ]) {
     try { _db.exec(stmt); } catch {}
   }
@@ -90,29 +91,55 @@ function getLlmStats(db) {
   return { recent, month, categories };
 }
 
-function getKnownEvent(db, eventKey, windowDays = 30) {
-  return db.prepare(
-    `SELECT * FROM known_events WHERE event_key = ? AND last_updated_at >= datetime('now', '-' || ? || ' days')`
-  ).get(eventKey, windowDays);
+// Canonical form for matching: lowercase, punctuation/separators collapsed to a
+// single hyphen. Catches pure separator/case drift ("a_b_c" vs "a b c") with no
+// risk of merging semantically different keys. Semantic drift (different words
+// for the same event) is handled upstream by LLM key-reuse, not here.
+function canonicalizeKey(s) {
+  return (s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function upsertKnownEvent(db, eventKey, emailId, discordMessageId, postedDetails) {
-  const existing = getKnownEvent(db, eventKey);
+function getKnownEvent(db, eventKey, windowDays = 30) {
+  const target = canonicalizeKey(eventKey);
+  if (!target) return undefined;
+  const rows = db.prepare(
+    `SELECT * FROM known_events WHERE last_updated_at >= datetime('now', '-' || ? || ' days')`
+  ).all(windowDays);
+  return rows.find(r => canonicalizeKey(r.event_key) === target);
+}
+
+// Recent events offered to the classifier as reuse candidates, newest first.
+function getRecentEvents(db, windowDays = 30, limit = 40) {
+  return db.prepare(
+    `SELECT event_key, posted_details FROM known_events
+     WHERE last_updated_at >= datetime('now', '-' || ? || ' days')
+     ORDER BY last_updated_at DESC LIMIT ?`
+  ).all(windowDays, limit);
+}
+
+// discordEventId is the Discord scheduled-event id. Pass null to leave any
+// existing value untouched (COALESCE) — calendar sync is best-effort and must
+// never wipe a previously stored event id when it's skipped or fails.
+function upsertKnownEvent(db, eventKey, emailId, discordMessageId, postedDetails, discordEventId = null) {
+  // Match across all ages (not just the dedup window) so a re-seen old event
+  // updates its row rather than INSERTing a duplicate / colliding on UNIQUE.
+  const existing = getKnownEvent(db, eventKey, 36500);
   if (existing) {
     db.prepare(`
       UPDATE known_events
       SET last_updated_at = CURRENT_TIMESTAMP,
           source_email_id = ?,
           discord_message_id = ?,
+          discord_event_id = COALESCE(?, discord_event_id),
           posted_details = ?
-      WHERE event_key = ?
-    `).run(emailId, discordMessageId, JSON.stringify(postedDetails), eventKey);
+      WHERE id = ?
+    `).run(emailId, discordMessageId, discordEventId, JSON.stringify(postedDetails), existing.id);
   } else {
     db.prepare(`
-      INSERT INTO known_events (event_key, source_email_id, discord_message_id, posted_details)
-      VALUES (?, ?, ?, ?)
-    `).run(eventKey, emailId, discordMessageId, JSON.stringify(postedDetails));
+      INSERT INTO known_events (event_key, source_email_id, discord_message_id, discord_event_id, posted_details)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(eventKey, emailId, discordMessageId, discordEventId, JSON.stringify(postedDetails));
   }
 }
 
-module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent, getLlmStats };
+module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, canonicalizeKey };

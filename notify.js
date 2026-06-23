@@ -53,7 +53,7 @@ async function withRetry(fn, maxAttempts = 3, baseDelayMs = 2000) {
   }
 }
 
-function buildMessageText(emailData, analysis, isUpdate, pingEveryone) {
+function buildMessageText(emailData, analysis, isUpdate, pingEveryone, eventUrl = null) {
   const titlePrefix = isUpdate ? '📢 **UPDATE:** ' : '';
   const lines = [];
 
@@ -78,6 +78,7 @@ function buildMessageText(emailData, analysis, isUpdate, pingEveryone) {
   if (analysis.lottery_deadline)  bullets.push(`• **Lottery deadline:** ${analysis.lottery_deadline}`);
   if (analysis.region_availability) bullets.push(`• **Availability:** ${analysis.region_availability}`);
   if (analysis.action_url)        bullets.push(`• **Link:** ${analysis.action_url}`);
+  if (eventUrl)                   bullets.push(`• **📅 Add to your calendar:** ${eventUrl}`);
 
   if (bullets.length > 0) {
     lines.push('');
@@ -91,8 +92,8 @@ function buildMessageText(emailData, analysis, isUpdate, pingEveryone) {
 }
 
 async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, options = {}) {
-  const { isUpdate = false, pingEveryone = false } = options;
-  const content = buildMessageText(emailData, analysis, isUpdate, pingEveryone);
+  const { isUpdate = false, pingEveryone = false, eventUrl = null } = options;
+  const content = buildMessageText(emailData, analysis, isUpdate, pingEveryone, eventUrl);
   const hasScreenshot = screenshotPath && fs.existsSync(screenshotPath);
   const payload = {
     content,
@@ -120,6 +121,25 @@ async function postToDiscord(webhookUrl, emailData, analysis, screenshotPath, op
     }
     const data = await response.json();
     return data.id || null;
+  });
+}
+
+// Edit a previously-posted webhook message — used to append the Discord event
+// link once the scheduled event exists. allowed_mentions is cleared so the edit
+// never re-pings @everyone even if the original content contains it.
+async function editDiscordMessage(webhookUrl, messageId, emailData, analysis, options = {}) {
+  const { isUpdate = false, pingEveryone = false, eventUrl = null } = options;
+  const content = buildMessageText(emailData, analysis, isUpdate, pingEveryone, eventUrl);
+  return withRetry(async () => {
+    const response = await fetch(`${webhookUrl}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Discord message edit failed (${response.status}): ${body}`);
+    }
   });
 }
 
@@ -173,4 +193,4 @@ async function postHeartbeat(webhookUrl, stats, config) {
   });
 }
 
-module.exports = { postToDiscord, postAlert, postHeartbeat };
+module.exports = { postToDiscord, editDiscordMessage, postAlert, postHeartbeat };

@@ -78,7 +78,17 @@ For event_key: create a normalized, canonical identifier for the event/product �
 - "pappy van winkle 2026 allocation announcement"
 - "kentucky owl rye batch 4 release"
 
+REUSING EVENT KEYS: if a "KNOWN RECENT EVENTS" list is provided in the user message and this email is about the SAME real-world event/release/lottery/sale as one of them, set event_key to that EXACT existing key, copied character-for-character. Match on the underlying event, NOT the wording — different emails about the same drop are often phrased very differently (different sender, subject, word order, extra words). A launch announcement, a "last call" reminder, and a release-day email for one product are all the SAME event. Only mint a new event_key when the email is genuinely about a different event.
+
 Return null for event_key on category 1 emails.
+
+CALENDAR EXTRACTION (for the server's events calendar):
+Set calendar_eligible to true when the email describes a release, drop, lottery window, or event that belongs on a calendar — EITHER a specific upcoming date (today or later) OR something available/happening RIGHT NOW. Set it false for: already-released products being re-advertised with no live drop, undated/open-ended announcements with no inferable date, ads (cat 1), action-required (cat 5), and triage (cat 6).
+- event_starts_now: true if the product/sale is available or happening IMMEDIATELY right now (a live drop, "available now", "on shelves today", a sale active now) with no specific future date — the calendar entry will start at post time. false if it has a future date or no date at all.
+- event_start_date: the date the event/drop/lottery happens or opens, as YYYY-MM-DD. For a VAGUE window ("next week", "late June", "early fall"), use the START of that window (earlier is safer — better to surface early and drop off than miss it). Null when event_starts_now is true, or when no date can be inferred.
+- event_start_time: a specific local clock time as 24-hour HH:MM if one is given (e.g. "drops at 10am" -> "10:00"). Null if only a date is known — the calendar will use a noon placeholder.
+- event_title: a short, specific calendar title (<= 60 chars), e.g. "Weller Full Proof 2026 Release" or "BTAC 2026 Lottery Opens".
+- event_location: where it happens — retailer/store name, city/state, "Online", or the distribution channel. Null if unknown.
 
 For action_url: if the email contains a specific call-to-action link the reader should click (purchase link, lottery entry, release access link, subscription confirmation), extract that URL. Exclude unsubscribe links, social media profile links, and generic footer/navigation links. Null for category 1 and when no specific action link exists.`;
 }
@@ -101,13 +111,30 @@ const ANALYSIS_SCHEMA = {
     update_summary: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'If is_meaningful_update and previous_post_details exist, what specifically is new vs before' },
     is_regional: { type: 'boolean', description: 'true ONLY if the release, event, or sale is EXCLUSIVELY regional or local with NO national availability component — requires physical presence OR is only available in specific states via state-controlled distribution (e.g. OHLQ, FWGS, PLCB) with no online/ship-to-home option. If a release has BOTH a local event AND nationwide online ordering, it is false. Examples: OHLQ barrel pick (Ohio only, no online order) → true; Buffalo Trace local tasting event where the product is also available to order online nationally → false; Buffalo Trace local tasting event for a product with no other purchase path → true; Pappy online ship-to-home → false; BTAC nationwide lottery → false.' },
     is_ping_worthy_imminent: { type: 'boolean', description: 'true ONLY if: (1) category is 3 (an immediate, available-right-now release), AND (2) the product is from a brand marked PING in the @everyone ping roster in the system prompt, AND (3) the specific bottle is a rare/allocated release per that roster — a named trigger example, or (if unnamed) clearly a rare/allocated/limited expression rather than a standard-lineup or excluded bottle. false for standard products, brands not marked PING, and non-category-3 emails.' },
-    action_url: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Primary call-to-action URL the reader should click (purchase link, lottery entry, release access, subscription confirmation). Exclude unsubscribe, social media, and footer links. Null for cat 1 and when no specific action link exists.' }
+    action_url: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Primary call-to-action URL the reader should click (purchase link, lottery entry, release access, subscription confirmation). Exclude unsubscribe, social media, and footer links. Null for cat 1 and when no specific action link exists.' },
+    calendar_eligible: { type: 'boolean', description: 'true if this is a release/drop/lottery/event for the calendar — either a specific upcoming date (today or later) OR available/happening right now. false for re-advertised already-released products with no live drop, undated announcements, ads, action-required, and triage.' },
+    event_starts_now: { type: 'boolean', description: 'true if available/happening RIGHT NOW (live drop, "available now", "on shelves today", sale active now) with no specific future date — the calendar entry starts at post time. false if it has a future date or no date.' },
+    event_start_date: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Calendar start date as YYYY-MM-DD. For a vague window, use the START of the window. Null when event_starts_now is true or no date inferable.' },
+    event_start_time: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Specific local start time as 24h HH:MM if given; null if only a date is known (noon placeholder will be used).' },
+    event_title: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Short specific calendar title (<=60 chars). Null when not calendar_eligible.' },
+    event_location: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Where it happens: store/retailer name, city/state, "Online", or distribution channel. Null if unknown.' }
   },
-  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_regional', 'is_ping_worthy_imminent', 'action_url'],
+  required: ['category', 'reasoning', 'event_key', 'summary', 'product_name', 'release_date', 'price', 'region_availability', 'lottery_deadline', 'desirability_score', 'discord_title', 'is_meaningful_update', 'update_summary', 'is_regional', 'is_ping_worthy_imminent', 'action_url', 'calendar_eligible', 'event_starts_now', 'event_start_date', 'event_start_time', 'event_title', 'event_location'],
   additionalProperties: false
 };
 
-async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEventDetails = null) {
+function renderCandidateEvents(candidateEvents) {
+  const lines = [];
+  for (const c of candidateEvents) {
+    let pd = {};
+    try { pd = JSON.parse(c.posted_details || '{}'); } catch {}
+    const bits = [pd.product_name, pd.release_date].filter(Boolean).join(' — ');
+    lines.push(`- "${c.event_key}"${bits ? ` (${bits})` : ''}`);
+  }
+  return lines.join('\n');
+}
+
+async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEventDetails = null, candidateEvents = []) {
   const client = new Anthropic({ apiKey });
 
   const links = extractLinks(emailData.html);
@@ -128,6 +155,13 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
       userTextParts.push(`${l.url} | ${l.text}`);
     }
     userTextParts.push('--- END LINKS ---');
+  }
+
+  if (candidateEvents && candidateEvents.length) {
+    userTextParts.push('');
+    userTextParts.push('--- KNOWN RECENT EVENTS (reuse an existing event_key when this email is the same real-world event) ---');
+    userTextParts.push(renderCandidateEvents(candidateEvents));
+    userTextParts.push('--- END KNOWN RECENT EVENTS ---');
   }
 
   if (previousEventDetails) {

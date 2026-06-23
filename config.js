@@ -23,6 +23,18 @@ function loadConfig() {
   _config.min_desirability_cat4 = _config.min_desirability_cat4 ?? 2;
   _config.llm_input_cost_per_million = _config.llm_input_cost_per_million ?? 3.00;
   _config.llm_output_cost_per_million = _config.llm_output_cost_per_million ?? 15.00;
+
+  // Discord scheduled-events calendar. Enabled automatically when a bot token +
+  // guild id are present, unless explicitly overridden.
+  _config.calendar_enabled = _config.calendar_enabled ?? !!(_config.discord_bot_token && _config.discord_guild_id);
+  _config.calendar_categories = _config.calendar_categories || [2, 3];
+  _config.calendar_timezone = _config.calendar_timezone || 'America/New_York';
+  _config.calendar_event_minutes = _config.calendar_event_minutes || 60;
+  if (_config.calendar_enabled) {
+    for (const key of ['discord_bot_token', 'discord_guild_id']) {
+      if (!_config[key]) throw new Error(`calendar_enabled but config.json missing required field: ${key}`);
+    }
+  }
   return _config;
 }
 

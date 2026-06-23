@@ -2,12 +2,13 @@
 const path = require('path');
 const fs = require('fs');
 const { loadConfig } = require('./config');
-const { getDb, isProcessed, insertEmail, getKnownEvent, upsertKnownEvent, getLlmStats } = require('./db');
+const { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats } = require('./db');
 const { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead } = require('./gmail');
 const { launchBrowser, renderEmailToScreenshot } = require('./screenshot');
 const { analyzeEmail } = require('./classify');
-const { postToDiscord, postAlert, postHeartbeat } = require('./notify');
+const { postToDiscord, editDiscordMessage, postAlert, postHeartbeat } = require('./notify');
 const { routeFor } = require('./routing');
+const { syncCalendarEvent } = require('./events');
 
 const config = loadConfig();
 const db = getDb(config.db_path);
@@ -58,6 +59,40 @@ async function runDailyMaintenance() {
 //                                (used when a known-event update is re-analyzed)
 //   tokens            {object}   {input, output} extra LLM tokens to account
 
+// Best-effort calendar sync. Creates/updates the Discord scheduled event for a
+// posted analysis and returns the event id to persist on known_events. Failures
+// here never block or fail the email — the webhook post is the primary path —
+// they just log + soft-alert and preserve any existing event id.
+async function syncCalendar(ctx, analysis) {
+  const { db, config, messageId } = ctx;
+  if (!config.calendar_enabled || !analysis.event_key) return null;
+  const existing = getKnownEvent(db, analysis.event_key, config.dedup_window_days);
+  const existingEventId = existing?.discord_event_id || null;
+  try {
+    const { eventId, action } = await syncCalendarEvent(config, analysis, existingEventId);
+    if (action !== 'skipped') console.log(`[${messageId}] Calendar event ${action} (${eventId})`);
+    return eventId;
+  } catch (err) {
+    console.error(`[${messageId}] Calendar sync failed: ${err.message}`);
+    await postAlert(config.discord_alerts_webhook_url, `Calendar sync failed for "${analysis.discord_title}": ${err.message}`);
+    return existingEventId;
+  }
+}
+
+// Best-effort: edit the just-posted Discord message to append a link to the
+// scheduled event (renders an "Interested" card). No event id -> nothing to do.
+// Failures here are non-fatal — the post and event already stand on their own.
+async function linkEventToMessage(config, webhook, discordMessageId, emailData, analysis, eventId, options) {
+  if (!config.calendar_enabled || !eventId || !discordMessageId) return;
+  const eventUrl = `https://discord.com/events/${config.discord_guild_id}/${eventId}`;
+  try {
+    await editDiscordMessage(webhook, discordMessageId, emailData, analysis, { ...options, eventUrl });
+    console.log(`[${discordMessageId}] Linked calendar event ${eventId} into post`);
+  } catch (err) {
+    console.warn(`[${discordMessageId}] Failed to add event link: ${err.message}`);
+  }
+}
+
 async function handleAd(ctx) {
   console.log(`[${ctx.messageId}] Category 1 (ad), discarding`);
   return {};
@@ -96,7 +131,9 @@ async function handleImmediateRelease(ctx) {
   try {
     const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, { pingEveryone });
     console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
-    if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
+    const discordEventId = await syncCalendar(ctx, analysis);
+    await linkEventToMessage(config, webhook, discordMessageId, emailData, analysis, discordEventId, { pingEveryone });
+    if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis, discordEventId);
     return { discordPosted: true, discordMessageId };
   } catch (err) {
     console.error(`[${messageId}] Discord post failed: ${err.message}`);
@@ -123,7 +160,9 @@ async function handleAnnouncement(ctx) {
     try {
       const discordMessageId = await postToDiscord(webhook, emailData, analysis, screenshotPath, { pingEveryone });
       console.log(`[${messageId}] Posted to Discord (message ${discordMessageId})`);
-      if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis);
+      const discordEventId = await syncCalendar(ctx, analysis);
+      await linkEventToMessage(config, webhook, discordMessageId, emailData, analysis, discordEventId, { pingEveryone });
+      if (analysis.event_key) upsertKnownEvent(db, analysis.event_key, messageId, discordMessageId, analysis, discordEventId);
       return { discordPosted: true, discordMessageId };
     } catch (err) {
       console.error(`[${messageId}] Discord post failed: ${err.message}`);
@@ -135,7 +174,7 @@ async function handleAnnouncement(ctx) {
   // Known event — re-classify with previous details to check for a meaningful update
   console.log(`[${messageId}] Known event, checking for meaningful update...`);
   const previousDetails = knownEvent.posted_details ? JSON.parse(knownEvent.posted_details) : null;
-  const updateAnalysis = await analyzeEmail(config.anthropic_api_key, config.model, emailData, screenshotPath, previousDetails);
+  const updateAnalysis = await analyzeEmail(config.anthropic_api_key, config.model, emailData, screenshotPath, previousDetails, ctx.candidateEvents);
   const tokens = { input: updateAnalysis._input_tokens || 0, output: updateAnalysis._output_tokens || 0 };
 
   if (!updateAnalysis.is_meaningful_update) {
@@ -148,7 +187,9 @@ async function handleAnnouncement(ctx) {
   try {
     const discordMessageId = await postToDiscord(webhook, emailData, updateAnalysis, screenshotPath, { isUpdate: true, pingEveryone });
     console.log(`[${messageId}] Update posted to Discord (message ${discordMessageId})`);
-    upsertKnownEvent(db, updateAnalysis.event_key, messageId, discordMessageId, updateAnalysis);
+    const discordEventId = await syncCalendar(ctx, updateAnalysis);
+    await linkEventToMessage(config, webhook, discordMessageId, emailData, updateAnalysis, discordEventId, { isUpdate: true, pingEveryone });
+    upsertKnownEvent(db, updateAnalysis.event_key, messageId, discordMessageId, updateAnalysis, discordEventId);
     return { discordPosted: true, discordMessageId, analysis: updateAnalysis, tokens };
   } catch (err) {
     console.error(`[${messageId}] Discord post failed: ${err.message}`);
@@ -185,7 +226,8 @@ async function processEmail(auth, messageId, browser) {
     console.warn(`[${messageId}] Screenshot failed: ${err.message}`);
   }
 
-  const analysis = await analyzeEmail(config.anthropic_api_key, config.model, emailData, screenshotPath);
+  const candidateEvents = getRecentEvents(db, config.dedup_window_days);
+  const analysis = await analyzeEmail(config.anthropic_api_key, config.model, emailData, screenshotPath, null, candidateEvents);
   let totalInputTokens = analysis._input_tokens || 0;
   let totalOutputTokens = analysis._output_tokens || 0;
   console.log(`[${messageId}] Category: ${analysis.category} | Event key: ${analysis.event_key}`);
@@ -193,7 +235,7 @@ async function processEmail(auth, messageId, browser) {
   const handler = CATEGORY_HANDLERS[analysis.category];
   let result = {};
   if (handler) {
-    result = await handler({ db, config, messageId, emailData, analysis, screenshotPath });
+    result = await handler({ db, config, messageId, emailData, analysis, screenshotPath, candidateEvents });
   } else {
     console.warn(`[${messageId}] Unexpected category ${analysis.category}, no handler — discarding`);
   }
