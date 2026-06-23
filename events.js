@@ -4,10 +4,12 @@
 // the Discord REST API as a real bot — webhooks cannot create/modify scheduled
 // events. Requires a bot in the guild with Create Events + Manage Events.
 //
-// Model: a date-bearing release/announcement becomes an EXTERNAL scheduled event
-// in the server's Events tab. Vague windows ("next week") are dated to the START
-// of the window with a noon-local placeholder time; follow-up emails PATCH the
-// same event in place (event id tracked on known_events.discord_event_id).
+// Model: a release/announcement with a SPECIFIC future date becomes an EXTERNAL
+// scheduled event in the server's Events tab. "Available now" drops and vague/
+// ambiguous windows ("next month", "this fall") are deliberately NOT calendared —
+// only a concrete date pins to a day. If a follow-up email for the same event
+// later carries a specific date, the event is created then; follow-ups also PATCH
+// an existing event in place (event id tracked on known_events.discord_event_id).
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
@@ -36,6 +38,9 @@ function zonedWallToUtcIso(y, mo, d, h, mi, timeZone) {
 
 // Build the UTC start instant for the calendar entry, or null if undatable.
 // event_start_date is "YYYY-MM-DD"; event_start_time is "HH:MM" or null (noon default).
+// Only a specific date produces an event — "available now" drops (event_starts_now)
+// and vague windows (which the classifier leaves with a null event_start_date) are
+// intentionally not calendared and return null here.
 function computeStartIso(analysis, config) {
   const dateStr = analysis.event_start_date;
   if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -45,11 +50,6 @@ function computeStartIso(analysis, config) {
       [h, mi] = analysis.event_start_time.split(':').map(Number);
     }
     return zonedWallToUtcIso(y, mo, d, h, mi, config.calendar_timezone);
-  }
-  // "Available now" drop with no specific date: start a couple minutes out
-  // (Discord rejects past/now start times) and run for the default duration.
-  if (analysis.event_starts_now) {
-    return new Date(Date.now() + 2 * 60 * 1000).toISOString();
   }
   return null;
 }
