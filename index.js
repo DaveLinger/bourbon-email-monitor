@@ -2,7 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const { loadConfig } = require('./config');
-const { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats } = require('./db');
+const { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, recordProcessingFailure, markFailureAlerted, clearProcessingFailure } = require('./db');
 const { authenticate, getEmailAddress, fetchUnreadIds, getMessage, markAsRead } = require('./gmail');
 const { launchBrowser, renderEmailToScreenshot } = require('./screenshot');
 const { analyzeEmail } = require('./classify');
@@ -310,8 +310,20 @@ async function poll(auth) {
       for (const id of ids) {
         try {
           await processEmail(auth, id, browser);
+          clearProcessingFailure(db, id); // clean run resets any failure streak
         } catch (err) {
           console.error(`Error processing message ${id}:`, err.message);
+          // The email is left unread + unstored and will retry next poll. Track
+          // the streak so a sustained outage / poison email gets one alert
+          // instead of failing silently forever.
+          const f = recordProcessingFailure(db, id, err.message);
+          if (f.attempts >= config.failure_alert_threshold && !f.alerted) {
+            await postAlert(
+              config.discord_alerts_webhook_url,
+              `⚠️ Email \`${id}\` has failed processing ${f.attempts}× (since ${f.first_failed_at} UTC) and is being retried every poll. Latest error: ${err.message}`
+            ).catch(() => {});
+            markFailureAlerted(db, id);
+          }
         }
       }
     } finally {

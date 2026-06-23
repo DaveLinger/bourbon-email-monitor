@@ -21,6 +21,11 @@ function loadConfig() {
   _config.dedup_window_days = _config.dedup_window_days || 30;
   _config.model = _config.model || 'claude-sonnet-4-6';
   _config.min_desirability_cat4 = _config.min_desirability_cat4 ?? 2;
+  // Consecutive failed polls on a single email before a (one-time) alert fires.
+  // The poll cadence means N here ≈ N minutes of sustained failure; keeps
+  // transient API blips quiet (the SDK already retries) but surfaces real outages
+  // and poison emails that would otherwise retry silently forever.
+  _config.failure_alert_threshold = _config.failure_alert_threshold ?? 4;
   _config.llm_input_cost_per_million = _config.llm_input_cost_per_million ?? 3.00;
   _config.llm_output_cost_per_million = _config.llm_output_cost_per_million ?? 15.00;
 

@@ -37,6 +37,19 @@ function getDb(dbPath) {
       discord_message_id TEXT,
       posted_details TEXT
     );
+
+    -- Tracks emails that THREW during processing (classification/screenshot/etc.)
+    -- and were left unread + unstored to retry next poll. Lets us alert once a
+    -- failure streak crosses a threshold instead of retrying silently forever.
+    -- Rows are deleted as soon as the email processes cleanly.
+    CREATE TABLE IF NOT EXISTS processing_failures (
+      message_id TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      first_failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_error TEXT,
+      alerted INTEGER NOT NULL DEFAULT 0
+    );
   `);
   // Migrations: add columns if they don't exist yet
   for (const stmt of [
@@ -142,4 +155,29 @@ function upsertKnownEvent(db, eventKey, emailId, discordMessageId, postedDetails
   }
 }
 
-module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, canonicalizeKey };
+// Record one failed processing attempt for an email, returning the updated row
+// ({ attempts, alerted, first_failed_at }) so the caller can decide whether to
+// alert. Increments on each consecutive failed poll.
+function recordProcessingFailure(db, messageId, errMsg) {
+  db.prepare(`
+    INSERT INTO processing_failures (message_id, attempts, last_error)
+    VALUES (?, 1, ?)
+    ON CONFLICT(message_id) DO UPDATE SET
+      attempts = attempts + 1,
+      last_failed_at = CURRENT_TIMESTAMP,
+      last_error = excluded.last_error
+  `).run(messageId, errMsg);
+  return db.prepare('SELECT attempts, alerted, first_failed_at FROM processing_failures WHERE message_id = ?').get(messageId);
+}
+
+function markFailureAlerted(db, messageId) {
+  db.prepare('UPDATE processing_failures SET alerted = 1 WHERE message_id = ?').run(messageId);
+}
+
+// Called when an email processes cleanly — clears any prior failure streak so a
+// later, unrelated failure starts counting fresh (and re-alerts if needed).
+function clearProcessingFailure(db, messageId) {
+  db.prepare('DELETE FROM processing_failures WHERE message_id = ?').run(messageId);
+}
+
+module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, canonicalizeKey, recordProcessingFailure, markFailureAlerted, clearProcessingFailure };
