@@ -40,6 +40,21 @@ function formatDate(dateStr) {
   return dateStr;
 }
 
+// Render the action link as a Discord masked link [label](url) using the
+// email's original anchor/button text, falling back to the raw URL when there's
+// no usable label. Webhook messages render masked links in plain content.
+function formatActionLink(url, linkText) {
+  if (!url) return url;
+  const label = (linkText || '')
+    .replace(/[\[\]]/g, '')   // brackets break masked-link syntax
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  // No meaningful label, or the label is just the URL again — show the raw URL.
+  if (!label || label.toLowerCase() === url.toLowerCase()) return url;
+  return `[${label}](${url})`;
+}
+
 async function withRetry(fn, maxAttempts = 3, baseDelayMs = 2000) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -77,7 +92,7 @@ function buildMessageText(emailData, analysis, isUpdate, pingEveryone, eventUrl 
   if (analysis.price)             bullets.push(`• **Price:** ${analysis.price}`);
   if (analysis.lottery_deadline)  bullets.push(`• **Lottery deadline:** ${analysis.lottery_deadline}`);
   if (analysis.region_availability) bullets.push(`• **Availability:** ${analysis.region_availability}`);
-  if (analysis.action_url)        bullets.push(`• **Link:** ${analysis.action_url}`);
+  if (analysis.action_url)        bullets.push(`• **Link:** ${formatActionLink(analysis.action_url, analysis.action_link_text)}`);
   if (eventUrl)                   bullets.push(`• **📅 Add to your calendar:** ${eventUrl}`);
 
   if (bullets.length > 0) {
