@@ -41,7 +41,7 @@ Requires a bot in the guild with **Create Events** + **Manage Events**. Disable 
 
 1. Create a project at [console.cloud.google.com](https://console.cloud.google.com)
 2. Enable the **Gmail API**
-3. Configure the OAuth consent screen (External, add your monitor inbox as a test user)
+3. Configure the OAuth consent screen (External). **Set the publishing status to "In Production"** — do *not* leave it in "Testing". In Testing mode, Google expires the refresh token after **7 days**, which silently breaks polling with `invalid_grant`. Since this is a single self-owned account on a sensitive scope, you'll see an "unverified app" warning at authorize time — that's expected; click **Advanced → Go to (app) (unsafe)**.
 4. Create an **OAuth 2.0 Client ID** (Desktop app type), download as `credentials.json`
 
 ### 1b. Discord bot (optional — for the events calendar)
@@ -112,6 +112,8 @@ node auth.js
 ```
 
 Opens a browser, authorize with the Gmail account being monitored, paste the code back. Saves `token.json`.
+
+> **Troubleshooting `invalid_grant`:** if the poll loop starts logging `Poll error: invalid_grant`, the Gmail refresh token has been revoked or expired. The usual cause is the OAuth consent screen still being in **"Testing"** status, which expires refresh tokens after 7 days (tell-tale sign: a `refresh_token_expires_in` field in `token.json`; a long-lived grant has none). Fix: set the consent screen to **"In Production"** (see Setup step 3), then re-run `node auth.js` to mint a fresh token and `pm2 restart email-monitor`.
 
 ### 5. Run
 
