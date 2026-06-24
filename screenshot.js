@@ -15,7 +15,7 @@ async function renderEmailToScreenshot(html, outputPath, sharedBrowser = null) {
   const browser = sharedBrowser || await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.setViewportSize({ width: 800, height: 900 });
 
     await page.route('**/*', (route) => {
       const resourceType = route.request().resourceType();
