@@ -167,3 +167,7 @@ Scores rank 1–5. Exclusivity of **access** matters most — a statewide public
 | 3 | Single barrel picks with genuinely private/limited purchase links, hard-to-find regionals |
 | 4 | Major annual allocated hunts: Russell's Reserve 13yr Barrel Proof, Eagle Rare 12, Old Forester Birthday Bourbon, Old Forester President's Choice, Elijah Craig 21 |
 | 5 | Trophy tier: BTAC (Stagg, WLW, Handy, Sazerac 18, Eagle Rare 17), Pappy Van Winkle, Russell's Reserve 15yr, Austin Nichols Archive (Gold Foil), Jack Daniel's 14yr, Heaven Hill 22yr |
+
+## Works with
+
+Fully standalone — Gmail, Claude, and Discord webhooks are its only dependencies. One free synergy: if [discord-notify-bot](https://github.com/DaveLinger/discord-notify-bot) watches the channels this posts to, its keyword subscriptions match these posts too (the webhook username contains "Scraper", which notify-bot's author filter accepts).
