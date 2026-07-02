@@ -19,7 +19,7 @@ function loadConfig() {
   _config.screenshot_dir = path.resolve(__dirname, _config.screenshot_dir || './screenshots');
   _config.db_path = path.resolve(__dirname, _config.db_path || './emails.db');
   _config.dedup_window_days = _config.dedup_window_days || 30;
-  _config.model = _config.model || 'claude-sonnet-4-6';
+  _config.model = _config.model || 'claude-sonnet-5';
   _config.min_desirability_cat4 = _config.min_desirability_cat4 ?? 2;
   // Consecutive failed polls on a single email before a (one-time) alert fires.
   // The poll cadence means N here ≈ N minutes of sustained failure; keeps
