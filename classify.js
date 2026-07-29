@@ -199,7 +199,7 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
 
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: buildSystemPrompt(),
     thinking: { type: 'disabled' },
     messages: [{ role: 'user', content }],
@@ -211,6 +211,10 @@ async function analyzeEmail(apiKey, model, emailData, screenshotPath, previousEv
       },
     },
   });
+
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(`LLM response hit the max_tokens cap (${response.usage?.output_tokens} output tokens) and was truncated`);
+  }
 
   const rawText = response.content.find(b => b.type === 'text')?.text || '{}';
   const parsed = JSON.parse(rawText);
