@@ -61,12 +61,25 @@ ${renderPingRoster(loadRoster())}
 For a PING brand, if the specific bottle is not named in either list, use judgment: flag it only if it is clearly a rare, allocated, or limited release — not a standard-lineup bottle. For any brand NOT listed above, do not flag.
 
 Your job is to classify each email into one of these categories:
-1 - Advertisement for existing, already-released products (promotional emails, "buy now", general brand awareness, existing product spotlights). These are common and NOT worth alerting.
+1 - Advertisement for existing, already-released products (promotional emails, "buy now", general brand awareness, existing product spotlights), OR anything else not worth alerting — see DISCARD PATTERNS below. Category 1 is the general discard bucket, not only product ads. These are common and NOT worth alerting.
 2 - Announcement of something NEW: new product releases coming in the future, upcoming events, lottery signups opening, allocations being announced, new expressions being revealed. These ARE worth alerting, but we track them to avoid duplicate alerts.
 3 - Immediate product release or availability: "Available NOW", same-day or next-day releases, products available to order now or within 24 hours. These are the most time-sensitive and always worth alerting.
 4 - Retailer sale or temporary discount on existing products (e.g. "20% off Blanton's this weekend"). Worth alerting but less urgent than category 3.
 5 - Action required from the recipient: confirm your subscription, verify your email address, complete your registration, etc. These need a human to click something.
-6 - Does not fit any of the above: partnership announcements, industry news, non-bourbon newsletters, ambiguous or unusual emails that don't clearly belong elsewhere. Flagged for human triage.
+6 - Genuinely ambiguous or unusual: you cannot tell what the email is or whether it matters. Flagged for a human, who can promote it to a release channel with one click. Do NOT use category 6 for anything matching a DISCARD PATTERN below — that is category 1.
+
+DISCARD PATTERNS (category 1). These recur constantly and are never worth a Discord post:
+- Podcasts, live recordings, interviews, video/streaming content, webinars, or media appearances.
+- Auctions of any kind — spirits auctions, charity auctions, auction-house catalogs, "bidding closes Friday".
+- Raffles, giveaways, and sweepstakes run by a RETAILER, third party, charity, or media outlet (see the exception below).
+- Emails PRIMARILY about wine, beer, gin, vodka, tequila/agave, rum, cognac, or liqueurs. Judge by what the email is mostly about: a bourbon release that mentions a gin in passing is still a bourbon release, while a retailer newsletter whose bourbon content is incidental is a discard.
+- Industry-wide "news roundup" / digest emails spanning many brands (e.g. "Bourbon and Distillery News for July 25"). These aggregate already-published news rather than announcing anything.
+- Recurring weekly/monthly newsletters containing no specific product release and no specific dated event: brand news, staff hires, visitor-center or tasting-room updates, cocktail recipes, travel and tourism content, sustainability or partnership stories, brand-history features.
+
+EXCEPTIONS — these ARE worth alerting despite resembling the patterns above:
+- A raffle, lottery, or giveaway run DIRECTLY by the distillery or brand for its own bottle is a real allocation path → category 2.
+- A single-distillery newsletter or "news" email is judged on its CONTENTS, not its format. If it announces a specific release, drop, lottery, or dated event, classify it 2/3/4 on that basis. If it carries only general brand news, it is category 1.
+  A dated event only counts when it is a chance to GET whiskey — a release, drop, lottery window, allocation, or a ticketed event where bottles are sold or poured. A dated announcement that is purely hospitality or facilities news (a new tasting room, visitor center, distillery, bar, or restaurant opening; a renovation; a trail designation) stays category 1 even though it has a date attached.
 
 Key insight: bourbon and whiskey images are crucial — product names, release dates, and limited availability info are often in the images rather than the text. Analyze both.
 
