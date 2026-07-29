@@ -56,6 +56,9 @@ function getDb(dbPath) {
     'ALTER TABLE emails ADD COLUMN input_tokens INTEGER DEFAULT 0',
     'ALTER TABLE emails ADD COLUMN output_tokens INTEGER DEFAULT 0',
     'ALTER TABLE known_events ADD COLUMN discord_event_id TEXT',
+    // How a category-6 triage post was resolved by a human: national/regional/dismissed.
+    // NULL means it's still sitting in the alerts channel awaiting a click.
+    'ALTER TABLE emails ADD COLUMN triage_route TEXT',
   ]) {
     try { _db.exec(stmt); } catch {}
   }
@@ -80,6 +83,23 @@ function insertEmail(db, data) {
        @discord_posted, @discord_message_id, @llm_response,
        @input_tokens, @output_tokens)
   `).run(data);
+}
+
+function getEmail(db, gmailId) {
+  return db.prepare('SELECT * FROM emails WHERE id = ?').get(gmailId);
+}
+
+// Record a human triage decision. A confirmed repost also flips discord_posted
+// so the daily heartbeat counts it, and stores the id of the reposted message
+// (replacing nothing — a triage email had no release post before this).
+function setTriageOutcome(db, gmailId, { route, discordMessageId }) {
+  db.prepare(`
+    UPDATE emails
+    SET triage_route = ?,
+        discord_posted = CASE WHEN ? IS NULL THEN discord_posted ELSE 1 END,
+        discord_message_id = COALESCE(?, discord_message_id)
+    WHERE id = ?
+  `).run(route, discordMessageId, discordMessageId, gmailId);
 }
 
 function getLlmStats(db) {
@@ -180,4 +200,4 @@ function clearProcessingFailure(db, messageId) {
   db.prepare('DELETE FROM processing_failures WHERE message_id = ?').run(messageId);
 }
 
-module.exports = { getDb, isProcessed, insertEmail, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, canonicalizeKey, recordProcessingFailure, markFailureAlerted, clearProcessingFailure };
+module.exports = { getDb, isProcessed, insertEmail, getEmail, setTriageOutcome, getKnownEvent, getRecentEvents, upsertKnownEvent, getLlmStats, canonicalizeKey, recordProcessingFailure, markFailureAlerted, clearProcessingFailure };

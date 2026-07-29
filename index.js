@@ -9,6 +9,7 @@ const { analyzeEmail } = require('./classify');
 const { postToDiscord, editDiscordMessage, postAlert, postHeartbeat } = require('./notify');
 const { routeFor } = require('./routing');
 const { syncCalendarEvent } = require('./events');
+const { initTriageBot, isTriageInteractive, postTriageForReview } = require('./triage');
 
 const config = loadConfig();
 const db = getDb(config.db_path);
@@ -111,11 +112,25 @@ async function handleActionRequired(ctx) {
   }
 }
 
+// Category 6 goes to the alerts channel for a human to look at. When the triage
+// bot is up, it's posted BY the bot with Confirm → National / Regional buttons
+// (see triage.js) so it can be promoted into the real channel with one click;
+// otherwise it falls back to the plain webhook post with no buttons.
 async function handleTriage(ctx) {
   const { config, messageId, emailData, analysis, screenshotPath } = ctx;
   console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
+  const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
+
+  if (isTriageInteractive()) {
+    try {
+      await postTriageForReview(config, messageId, emailData, triageAnalysis, screenshotPath);
+      return { discordPosted: true };
+    } catch (err) {
+      console.warn(`[${messageId}] Interactive triage post failed (${err.message}) — falling back to webhook`);
+    }
+  }
+
   try {
-    const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
     await postToDiscord(config.discord_alerts_webhook_url, emailData, triageAnalysis, screenshotPath);
     return { discordPosted: true };
   } catch (err) {
@@ -340,6 +355,10 @@ async function run() {
   const auth = await authenticate(config.gmail_credentials_path, config.gmail_token_path);
   const emailAddress = await getEmailAddress(auth);
   console.log(`Monitoring inbox: ${emailAddress}`);
+
+  // Gateway connection for triage confirm buttons. Best-effort: if it can't come
+  // up, triage posts just go out over the webhook without buttons as before.
+  await initTriageBot(config, db);
 
   const intervalMs = config.poll_interval_minutes * 60 * 1000;
   console.log(`Polling every ${config.poll_interval_minutes} minutes`);

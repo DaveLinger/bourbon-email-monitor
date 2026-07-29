@@ -16,7 +16,7 @@ Monitors a dedicated Gmail inbox for bourbon and whiskey distillery newsletters.
 | 3 | Immediate product release | Post to releases channel |
 | 4 | Retailer sale on existing product | Post to releases channel (with dedup, desirability filter) |
 | 5 | Action required (confirm subscription, etc.) | Post to alerts channel |
-| 6 | Doesn't fit any category | Post to alerts channel for human triage |
+| 6 | Doesn't fit any category | Post to alerts channel for human triage (with confirm buttons) |
 
 **Smart deduplication:** follow-up emails about a known event are re-analyzed against the previous post's details. Only re-fires if material new information is present (added dates, prices, lottery deadlines, etc.). Events are matched two ways so the same drop isn't posted twice under slightly different identifiers: a **canonical key match** (lowercase, punctuation/separators normalized) catches formatting drift, and the classifier is shown the recent known events and instructed to **reuse an existing `event_key` verbatim** when an email describes the same real-world event in different wording.
 
@@ -26,6 +26,8 @@ Monitors a dedicated Gmail inbox for bourbon and whiskey distillery newsletters.
 - The release post is then edited to append an **Add to your calendar** link to the event (Discord renders an "Interested" card). All calendar work is best-effort — failures never block or fail the webhook post.
 
 Requires a bot in the guild with **Create Events** + **Manage Events**. Disable by setting `calendar_enabled: false`.
+
+**Interactive triage:** category 6 emails land in the alerts channel with three buttons — **✅ Confirm → National**, **📍 Confirm → Regional**, **🗑️ Dismiss**. Confirming re-posts the stored analysis (screenshot included) to the releases or regional webhook, syncs the calendar event, records the event key for dedup so follow-ups don't re-triage, and edits the triage message to note who confirmed it plus a jump link to the post. A confirmed repost never pings `@everyone`. The buttons need a gateway connection, so the triage message is sent **by the bot** rather than the alerts webhook; the bot therefore needs **View Channel / Send Messages / Attach Files** in the alerts channel. If the bot can't log in or can't post there, triage falls back to the old webhook post with no buttons. Disable with `interactive_triage: false`.
 
 **Desirability filter:** category 4 (retailer sales) are only posted if `desirability_score >= min_desirability_cat4` (default 2). Scores rank scarcity and exclusivity over brand fame — a private barrel pick with a limited access link outranks a wide public release of a more famous label.
 
@@ -44,11 +46,12 @@ Requires a bot in the guild with **Create Events** + **Manage Events**. Disable 
 3. Configure the OAuth consent screen (External). **Set the publishing status to "In Production"** — do *not* leave it in "Testing". In Testing mode, Google expires the refresh token after **7 days**, which silently breaks polling with `invalid_grant`. Since this is a single self-owned account on a sensitive scope, you'll see an "unverified app" warning at authorize time — that's expected; click **Advanced → Go to (app) (unsafe)**.
 4. Create an **OAuth 2.0 Client ID** (Desktop app type), download as `credentials.json`
 
-### 1b. Discord bot (optional — for the events calendar)
+### 1b. Discord bot (optional — for the events calendar and triage buttons)
 
 1. Create an application at [discord.com/developers](https://discord.com/developers/applications) and add a **Bot**; copy the token into `discord_bot_token`.
 2. Invite it to your server with the **Create Events** and **Manage Events** permissions (scope `bot`). No privileged intents are needed.
 3. Put your server id in `discord_guild_id` (enable Developer Mode → right-click the server → Copy Server ID).
+4. For the triage confirm buttons, give the bot **View Channel**, **Send Messages** and **Attach Files** in the alerts channel (if that channel is private, add the bot explicitly under Edit Channel → Permissions). The channel id is read from the alerts webhook automatically; override with `discord_alerts_channel_id` if needed.
 
 Skip this and leave `discord_bot_token`/`discord_guild_id` empty to run webhooks-only with no calendar.
 
@@ -133,6 +136,7 @@ notify.js             # Discord webhook posts, message edits, heartbeat
 routing.js            # channel + @everyone-ping routing policy
 roster.js             # editable @everyone ping brand roster (hot-reloaded)
 events.js             # Discord scheduled-events (calendar) transport via the bot
+triage.js             # gateway bot: category-6 confirm buttons and the repost
 db.js                 # SQLite schema and queries
 config.js             # config loader
 auth.js               # one-time Gmail OAuth flow
@@ -153,7 +157,7 @@ It re-extracts dates from each stored row via a small LLM pass, skips past/undat
 ## Database
 
 SQLite at `emails.db`:
-- `emails` — every processed email with classification, summary, Discord post status, and LLM token counts
+- `emails` — every processed email with classification, summary, Discord post status, and LLM token counts; `triage_route` records how a category-6 email was resolved (`national` / `regional` / `dismissed`, NULL = still awaiting a click)
 - `known_events` — dedup table tracking announced events and what was previously posted; `discord_event_id` links the row to its Discord scheduled event so follow-ups update it in place
 
 ## Desirability scores

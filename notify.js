@@ -208,4 +208,4 @@ async function postHeartbeat(webhookUrl, stats, config) {
   });
 }
 
-module.exports = { postToDiscord, editDiscordMessage, postAlert, postHeartbeat };
+module.exports = { postToDiscord, editDiscordMessage, postAlert, postHeartbeat, buildMessageText };
