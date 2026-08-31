@@ -1,16 +1,16 @@
 'use strict';
 
 // One-shot: re-post a previously-processed email to the alerts channel WITH the
-// triage confirm buttons. Useful for category-6 emails that were triaged before
-// the buttons existed (or when the bot was missing channel permissions at the
-// time), and as the way to test the button flow end to end.
+// triage confirm buttons. Useful for category 5/6 emails that landed in alerts
+// before the buttons existed (or when the bot was missing channel permissions at
+// the time), and as the way to test the button flow end to end.
 //
-//   node retriage.js                 # list unresolved category-6 emails
+//   node retriage.js                 # list unresolved alerts-channel emails
 //   node retriage.js <gmail_id>      # re-post that one with buttons
 
 const { loadConfig } = require('./config');
 const { getDb, getEmail } = require('./db');
-const { postTriageForReview } = require('./triage');
+const { postTriageForReview, REVIEW_CATEGORIES } = require('./triage');
 
 (async () => {
   const config = loadConfig();
@@ -19,13 +19,13 @@ const { postTriageForReview } = require('./triage');
 
   if (!gmailId) {
     const rows = db.prepare(`
-      SELECT id, received_at, subject FROM emails
-      WHERE category = 6 AND triage_route IS NULL
+      SELECT id, received_at, subject, category FROM emails
+      WHERE category IN (${REVIEW_CATEGORIES.map(() => '?').join(',')}) AND triage_route IS NULL
       ORDER BY processed_at DESC LIMIT 20
-    `).all();
-    if (!rows.length) return console.log('No unresolved category-6 emails.');
+    `).all(...REVIEW_CATEGORIES);
+    if (!rows.length) return console.log('No unresolved alerts-channel emails.');
     console.log('Unresolved triage emails (newest first):\n');
-    for (const r of rows) console.log(`  ${r.id}  ${(r.subject || '').slice(0, 70)}`);
+    for (const r of rows) console.log(`  ${r.id}  [cat ${r.category}]  ${(r.subject || '').slice(0, 70)}`);
     console.log('\nRe-post one with: node retriage.js <id>');
     return;
   }
@@ -36,7 +36,8 @@ const { postTriageForReview } = require('./triage');
 
   const analysis = JSON.parse(row.llm_response);
   const emailData = { from: row.from_addr, subject: row.subject };
-  const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
+  const prefix = row.category === 5 ? '📬 Action required' : '⚠️ Triage needed';
+  const triageAnalysis = { ...analysis, discord_title: `${prefix}: ${analysis.discord_title}` };
   // Posts over REST only — the running email-monitor daemon is what listens for
   // the click, so this script must not open its own gateway session (two sessions
   // on one bot token would each handle every click).

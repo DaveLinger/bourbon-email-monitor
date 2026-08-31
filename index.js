@@ -99,31 +99,17 @@ async function handleAd(ctx) {
   return {};
 }
 
-async function handleActionRequired(ctx) {
-  const { config, messageId, emailData, analysis, screenshotPath } = ctx;
-  console.log(`[${messageId}] Category 5 (action required), posting to alerts`);
-  try {
-    const actionAnalysis = { ...analysis, discord_title: `📬 Action required: ${analysis.discord_title}` };
-    await postToDiscord(config.discord_alerts_webhook_url, emailData, actionAnalysis, screenshotPath);
-    return { discordPosted: true };
-  } catch (err) {
-    console.error(`[${messageId}] Action required post failed: ${err.message}`);
-    return { postHardFailed: true };
-  }
-}
-
-// Category 6 goes to the alerts channel for a human to look at. When the triage
-// bot is up, it's posted BY the bot with Confirm → National / Regional buttons
-// (see triage.js) so it can be promoted into the real channel with one click;
-// otherwise it falls back to the plain webhook post with no buttons.
-async function handleTriage(ctx) {
-  const { config, messageId, emailData, analysis, screenshotPath } = ctx;
-  console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
-  const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
+// Categories 5 and 6 both land in the alerts channel for a human to look at.
+// When the triage bot is up, the post is sent BY the bot with Confirm → National
+// / Regional / Dismiss buttons (see triage.js) so it can be promoted into the
+// real channel with one click; otherwise it falls back to the plain webhook post
+// with no buttons.
+async function postForReview(ctx, reviewAnalysis, label) {
+  const { config, messageId, emailData, screenshotPath } = ctx;
 
   if (isTriageInteractive()) {
     try {
-      await postTriageForReview(config, messageId, emailData, triageAnalysis, screenshotPath);
+      await postTriageForReview(config, messageId, emailData, reviewAnalysis, screenshotPath);
       return { discordPosted: true };
     } catch (err) {
       console.warn(`[${messageId}] Interactive triage post failed (${err.message}) — falling back to webhook`);
@@ -131,12 +117,26 @@ async function handleTriage(ctx) {
   }
 
   try {
-    await postToDiscord(config.discord_alerts_webhook_url, emailData, triageAnalysis, screenshotPath);
+    await postToDiscord(config.discord_alerts_webhook_url, emailData, reviewAnalysis, screenshotPath);
     return { discordPosted: true };
   } catch (err) {
-    console.error(`[${messageId}] Triage alert post failed: ${err.message}`);
+    console.error(`[${messageId}] ${label} post failed: ${err.message}`);
     return { postHardFailed: true };
   }
+}
+
+async function handleActionRequired(ctx) {
+  const { messageId, analysis } = ctx;
+  console.log(`[${messageId}] Category 5 (action required), posting to alerts for review`);
+  const actionAnalysis = { ...analysis, discord_title: `📬 Action required: ${analysis.discord_title}` };
+  return postForReview(ctx, actionAnalysis, 'Action required');
+}
+
+async function handleTriage(ctx) {
+  const { messageId, analysis } = ctx;
+  console.log(`[${messageId}] Category 6 (uncategorized), posting to alerts for triage`);
+  const triageAnalysis = { ...analysis, discord_title: `⚠️ Triage needed: ${analysis.discord_title}` };
+  return postForReview(ctx, triageAnalysis, 'Triage alert');
 }
 
 async function handleImmediateRelease(ctx) {

@@ -1,8 +1,9 @@
 'use strict';
 
-// Interactive triage. Category 6 (uncategorized) emails go to the alerts channel
-// for a human to look at; this module puts CONFIRM buttons on that post so the
-// email can be promoted into the real releases/regional channel with one click.
+// Interactive triage. Categories 5 (action required) and 6 (uncategorized) go to
+// the alerts channel for a human to look at; this module puts CONFIRM buttons on
+// that post so the email can be promoted into the real releases/regional channel
+// with one click.
 //
 // Why a gateway bot: webhook messages can't carry components unless the webhook
 // is application-owned, and nothing receives the click either. So the triage post
@@ -159,6 +160,14 @@ function isTriageButton(interaction) {
   return interaction.isButton() && interaction.customId.startsWith(`${CUSTOM_ID_PREFIX}:`);
 }
 
+// Categories the alerts channel parks for a human decision. Confirming one turns
+// it into a plain announcement (category 2 unlocks dedup + the calendar).
+const REVIEW_CATEGORIES = [5, 6];
+
+// Prefixes postForReview (index.js) puts on the alerts-channel title, stripped
+// back off when the email is promoted into a real channel.
+const REVIEW_TITLE_PREFIX = /^(?:⚠️\s*Triage needed|📬\s*Action required):\s*/;
+
 // The stored analysis, adjusted for a human-confirmed post: it's a real
 // announcement now (category 2 unlocks dedup + the calendar), routed per the
 // button that was clicked, and never pinging @everyone — a human promoting an
@@ -166,10 +175,10 @@ function isTriageButton(interaction) {
 function confirmedAnalysis(stored, route) {
   return {
     ...stored,
-    category: stored.category === 6 ? 2 : stored.category,
+    category: REVIEW_CATEGORIES.includes(stored.category) ? 2 : stored.category,
     is_regional: route === 'regional',
     is_ping_worthy_imminent: false,
-    discord_title: String(stored.discord_title || '').replace(/^⚠️\s*Triage needed:\s*/, ''),
+    discord_title: String(stored.discord_title || '').replace(REVIEW_TITLE_PREFIX, ''),
   };
 }
 
@@ -287,4 +296,4 @@ async function jumpLink(config, webhookUrl, messageId) {
   }
 }
 
-module.exports = { initTriageBot, isTriageInteractive, postTriageForReview };
+module.exports = { initTriageBot, isTriageInteractive, postTriageForReview, REVIEW_CATEGORIES };
